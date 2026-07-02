@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le Compagnon - Coach A-Puzzle-A-Day</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,500&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #221610; }
+@keyframes deadpulse { 0%,100%{box-shadow:inset 0 0 0 2px #C4472F}50%{box-shadow:inset 0 0 0 4px #C4472F} }
+@keyframes shake { 0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)} }
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+.flex{display:flex}.flex-col{flex-direction:column}.items-center{align-items:center}.items-end{align-items:flex-end}
+.justify-between{justify-content:space-between}.gap-2{gap:8px}.flex-wrap{flex-wrap:wrap}.ml-auto{margin-left:auto}
+.w-full{width:100%}.min-h-screen{min-height:100vh}.rounded{border-radius:6px}.rounded-lg{border-radius:12px}
+.rounded-xl{border-radius:16px}.rounded-2xl{border-radius:20px}.rounded-full{border-radius:9999px}
+.p-2{padding:8px}.p-3{padding:12px}.p-4{padding:16px}.px-2{padding-left:8px;padding-right:8px}
+.px-3{padding-left:12px;padding-right:12px}.px-4{padding-left:16px;padding-right:16px}
+.py-1{padding-top:4px;padding-bottom:4px}.py-1\.5{padding-top:6px;padding-bottom:6px}
+.py-2{padding-top:8px;padding-bottom:8px}.py-5{padding-top:20px;padding-bottom:20px}
+.px-3{padding-left:12px;padding-right:12px}.mt-2{margin-top:8px}.mt-3{margin-top:12px}
+.mt-4{margin-top:16px}.mt-5{margin-top:20px}.mb-4{margin-bottom:16px}.mb-6{margin-bottom:6px}
+.pt-3{padding-top:12px}.h-2{height:8px}.max-w-md{max-width:448px}
+.grid{display:grid}.grid-cols-4{grid-template-columns:repeat(4,1fr)}
+select{cursor:pointer;outline:none}
+button:focus-visible{outline:2px solid #C9992E;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useCallback } = React;
+
+const MONTHS = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
+const DAYS_IN = [31,29,31,30,31,30,31,31,30,31,30,31];
+const VALID = [];
+for(let r=0;r<2;r++) for(let c=0;c<6;c++) VALID.push([r,c]);
+for(let r=2;r<7;r++) for(let c=0;c<7;c++){if(r===6&&c>2)break;VALID.push([r,c]);}
+const IDX={}; VALID.forEach(([r,c],i)=>{IDX[r+","+c]=i;});
+const NC=VALID.length;
+
+const BASE={
+  O:[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]],
+  P:[[0,0],[0,1],[1,0],[1,1],[2,0]],
+  U:[[0,0],[0,2],[1,0],[1,1],[1,2]],
+  L:[[0,0],[1,0],[2,0],[3,0],[3,1]],
+  N:[[0,0],[1,0],[1,1],[2,1],[3,1]],
+  V:[[0,0],[1,0],[2,0],[2,1],[2,2]],
+  Y:[[0,0],[1,0],[1,1],[2,0],[3,0]],
+  Z:[[0,0],[0,1],[1,1],[2,1],[2,2]],
+};
+const PIECES=Object.keys(BASE);
+const PIECE_FR={O:"le Rectangle",P:"le P",U:"le U",L:"le L",N:"l'Escalier",V:"l'Équerre",Y:"le Y",Z:"le Z"};
+const PIECE_COLOR={O:"#D9A441",P:"#7A9E6B",U:"#5F7FA6",L:"#B96A55",N:"#8B6FA8",V:"#4FA08D",Y:"#C98CB3",Z:"#A99A5B"};
+
+function norm(cells){
+  const mr=Math.min(...cells.map(p=>p[0])),mc=Math.min(...cells.map(p=>p[1]));
+  return cells.map(([r,c])=>[r-mr,c-mc]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+}
+function orients(cells){
+  const seen=new Set();const out=[];let cur=cells;
+  for(let f=0;f<2;f++){
+    for(let ro=0;ro<4;ro++){
+      const n=norm(cur);const k=JSON.stringify(n);
+      if(!seen.has(k)){seen.add(k);out.push(n);}
+      cur=cur.map(([r,c])=>[c,-r]);
+    }
+    cur=cur.map(([r,c])=>[r,-c]);
+  }
+  return out;
+}
+const ORIENTS={};PIECES.forEach(p=>{ORIENTS[p]=orients(BASE[p]);});
+const PLACEMENTS={};const BY_CELL={};
+for(const name of PIECES){
+  PLACEMENTS[name]=[];BY_CELL[name]=Array.from({length:NC},()=>[]);
+  for(const o of ORIENTS[name]){
+    for(let dr=0;dr<7;dr++) for(let dc=0;dc<7;dc++){
+      const pts=o.map(([r,c])=>IDX[(r+dr)+","+(c+dc)]);
+      if(pts.every(p=>p!==undefined)){
+        const pi=PLACEMENTS[name].length;
+        PLACEMENTS[name].push(pts);
+        pts.forEach(p=>BY_CELL[name][p].push(pi));
+      }
+    }
+  }
+}
+function enumerateSols(openIdx,placed){
+  const occ=new Array(NC).fill(false);
+  openIdx.forEach(i=>(occ[i]=true));
+  const used=new Set();
+  for(const pl of placed){used.add(pl.piece);pl.cells.forEach(i=>(occ[i]=true));}
+  const sols=[];const cur=[];
+  function dfs(){
+    let cell=-1;
+    for(let i=0;i<NC;i++) if(!occ[i]){cell=i;break;}
+    if(cell===-1){sols.push(cur.slice());return;}
+    for(const name of PIECES){
+      if(used.has(name)) continue;
+      for(const pi of BY_CELL[name][cell]){
+        const pts=PLACEMENTS[name][pi];
+        let clash=false;
+        for(const p of pts) if(occ[p]){clash=true;break;}
+        if(clash) continue;
+        pts.forEach(p=>(occ[p]=true));used.add(name);cur.push({piece:name,cells:pts});
+        dfs();
+        pts.forEach(p=>(occ[p]=false));used.delete(name);cur.pop();
+      }
+    }
+  }
+  dfs();return sols;
+}
+const NBR=VALID.map(([r,c])=>[[r+1,c],[r-1,c],[r,c+1],[r,c-1]].map(([a,b])=>IDX[a+","+b]).filter(x=>x!==undefined));
+function freeRegions(openIdx,placed){
+  const occ=new Array(NC).fill(false);
+  openIdx.forEach(i=>(occ[i]=true));
+  placed.forEach(pl=>pl.cells.forEach(i=>(occ[i]=true)));
+  const seen=new Array(NC).fill(false);const regions=[];
+  for(let i=0;i<NC;i++){
+    if(occ[i]||seen[i]) continue;
+    const stack=[i];const reg=[];
+    while(stack.length){
+      const u=stack.pop();
+      if(seen[u]||occ[u]) continue;
+      seen[u]=true;reg.push(u);
+      NBR[u].forEach(v=>{if(!seen[v]&&!occ[v])stack.push(v);});
+    }
+    regions.push(reg);
+  }
+  return regions;
+}
+function achievableSizes(placed){
+  const usedNames=new Set(placed.map(p=>p.piece));
+  const fives=PIECES.filter(p=>p!=="O"&&!usedNames.has(p)).length;
+  const hasO=!usedNames.has("O");
+  const s=new Set();
+  for(let a=0;a<=fives;a++) for(let b=0;b<=(hasO?1:0);b++) s.add(5*a+6*b);
+  return s;
+}
+function cellLabel(i){
+  const[r,c]=VALID[i];
+  if(r<2) return MONTHS[r*6+c];
+  return String((r-2)*7+c+1);
+}
+function zoneName(cells){
+  const rs=cells.map(i=>VALID[i]);
+  if(rs.some(([r])=>r===6)) return "le couloir 29-31 (bas gauche), la zone la plus piégeuse";
+  if(rs.some(([r,c])=>c===6)) return "le bord droit, sous le décroché";
+  if(rs.some(([r,c])=>r<2)) return "la bande des mois, en haut";
+  return null;
+}
+
+function App(){
+  const[month,setMonth]=useState(6);
+  const[day,setDay]=useState(1);
+  const[placed,setPlaced]=useState([]);
+  const[selected,setSelected]=useState(null);
+  const[orientIdx,setOrientIdx]=useState(0);
+  const[ghost,setGhost]=useState(null);
+  const[hints,setHints]=useState(0);
+  const[deadEnds,setDeadEnds]=useState(0);
+  const[startTime,setStartTime]=useState(Date.now());
+  const[flash,setFlash]=useState(null);
+
+  const openIdx=useMemo(()=>{
+    const mr=month<6?0:1,mc=month%6;
+    const dr=2+Math.floor((day-1)/7),dc=(day-1)%7;
+    return[IDX[mr+","+mc],IDX[dr+","+dc]];
+  },[month,day]);
+
+  const sols=useMemo(()=>enumerateSols(openIdx,placed),[openIdx,placed]);
+  const totalSols=useMemo(()=>enumerateSols(openIdx,[]).length,[openIdx]);
+
+  const occupiedBy=useMemo(()=>{
+    const m={};
+    placed.forEach((pl,k)=>pl.cells.forEach(i=>(m[i]={piece:pl.piece,k})));
+    return m;
+  },[placed]);
+
+  const deadCells=useMemo(()=>{
+    if(sols.length>0) return new Set();
+    const ach=achievableSizes(placed);const bad=new Set();
+    freeRegions(openIdx,placed).forEach(reg=>{if(!ach.has(reg.length))reg.forEach(i=>bad.add(i));});
+    return bad;
+  },[sols,openIdx,placed]);
+
+  const deadRegionSizes=useMemo(()=>{
+    if(sols.length>0) return[];
+    const ach=achievableSizes(placed);
+    return freeRegions(openIdx,placed).filter(r=>!ach.has(r.length)).map(r=>r.length);
+  },[sols,openIdx,placed]);
+
+  const won=placed.length===8&&sols.length===1;
+
+  const coach=useMemo(()=>{
+    if(won){
+      const mins=Math.round((Date.now()-startTime)/6000)/10;
+      return{tone:"win",title:"Résolu.",
+        text:`${totalSols} chemins existaient, tu en as trouvé un. ${hints===0?"Sans aucun conseil : c'est la vraie victoire.":`Avec ${hints} conseil${hints>1?"s":""}, ${deadEnds} impasse${deadEnds>1?"s":""}. Prochain objectif : zéro conseil.`} Temps : ${mins} min.`,
+        principle:null};
+    }
+    if(placed.length===0){
+      return{tone:"info",title:`${totalSols} chemins mènent au ${day} ${MONTHS[month]}.`,
+        text:"Commence par une zone critique : le couloir 29-31 en bas à gauche, ou autour des deux cases libres. Garde le Rectangle pour la fin, c'est ton joker.",
+        principle:"Zones critiques d'abord, pièces dociles à la fin"};
+    }
+    if(sols.length===0){
+      if(deadRegionSizes.length>0){
+        return{tone:"danger",title:"Trou mort détecté.",
+          text:`La zone rouge fait ${deadRegionSizes.join(" et ")} case${deadRegionSizes.some(s=>s>1)?"s":""} : aucune combinaison de pièces (tailles 5 et 6) ne peut la remplir exactement. Retire la dernière pièce.`,
+          principle:"Après chaque pose, scanne les trous : tout doit rester en multiples de 5 et 6"};
+      }
+      return{tone:"danger",title:"Impasse.",
+        text:"Plus aucune combinaison des pièces restantes ne couvre le plateau. Retire la dernière pièce et essaie une autre orientation ou position.",
+        principle:"Backtracking discipliné : recule d'un cran, pas de tout"};
+    }
+    const ratio=sols.length/Math.max(totalSols,1);
+    const qual=ratio>0.3?"Tu gardes le champ large.":ratio>0.05?"Le chemin se resserre, reste précis.":"Corde raide : chaque pose compte désormais.";
+    return{tone:"ok",title:`Bien. ${sols.length} chemin${sols.length>1?"s":""} encore ouvert${sols.length>1?"s":""}.`,
+      text:`${qual} ${8-placed.length} pièces restantes. Demande un conseil pour comprendre le coup le plus sûr.`,
+      principle:null};
+  },[won,placed,sols,totalSols,deadRegionSizes,day,month,hints,deadEnds,startTime]);
+
+  const advise=useCallback(()=>{
+    if(sols.length===0||won) return;
+    setHints(h=>h+1);
+    const usedNames=new Set(placed.map(p=>p.piece));
+    const options={};
+    for(const sol of sols){
+      for(const mv of sol){
+        if(usedNames.has(mv.piece)) continue;
+        const key=mv.piece+":"+mv.cells.join("-");
+        if(!options[mv.piece]) options[mv.piece]=new Map();
+        const e=options[mv.piece].get(key)||{cells:mv.cells,count:0};
+        e.count+=1;options[mv.piece].set(key,e);
+      }
+    }
+    let bestPiece=null,minOpts=Infinity;
+    for(const p of Object.keys(options)) if(options[p].size<minOpts){minOpts=options[p].size;bestPiece=p;}
+    let bestPl=null;
+    for(const e of options[bestPiece].values()) if(!bestPl||e.count>bestPl.count) bestPl=e;
+    const pct=Math.round((100*bestPl.count)/sols.length);
+    const zone=zoneName(bestPl.cells);
+    const reasons=[
+      `${PIECE_FR[bestPiece].charAt(0).toUpperCase()+PIECE_FR[bestPiece].slice(1)} est la pièce la plus contrainte : il ne lui reste que ${minOpts} position${minOpts>1?"s":""} gagnante${minOpts>1?"s":""}. On la pose maintenant, avant qu'elle ne devienne impossible.`,
+      `Cette position est présente dans ${bestPl.count} des ${sols.length} chemins restants (${pct} %) : c'est le coup qui ferme le moins de portes.`,
+    ];
+    if(zone) reasons.push(`Bonus : elle verrouille ${zone}.`);
+    setGhost({piece:bestPiece,cells:bestPl.cells,why:reasons});
+    setSelected(null);
+  },[sols,placed,won]);
+
+  const placeGhost=()=>{
+    if(!ghost) return;
+    setPlaced(p=>[...p,{piece:ghost.piece,cells:ghost.cells}]);
+    setGhost(null);
+  };
+
+  const tryPlace=(cellIdx)=>{
+    if(occupiedBy[cellIdx]!==undefined){
+      const k=occupiedBy[cellIdx].k;
+      setPlaced(p=>p.filter((_,i)=>i!==k));
+      setGhost(null);return;
+    }
+    if(!selected) return;
+    const shape=ORIENTS[selected][orientIdx%ORIENTS[selected].length];
+    const[tr,tc]=VALID[cellIdx];
+    const occ=new Set(Object.keys(occupiedBy).map(Number).concat(openIdx));
+    for(const[ar,ac] of shape){
+      const pts=shape.map(([r,c])=>IDX[(tr+r-ar)+","+(tc+c-ac)]);
+      if(pts.every(p=>p!==undefined&&!occ.has(p))){
+        const wasOk=sols.length>0;
+        setPlaced(p=>{
+          const np=[...p,{piece:selected,cells:pts}];
+          if(wasOk&&enumerateSols(openIdx,np).length===0) setDeadEnds(d=>d+1);
+          return np;
+        });
+        setSelected(null);setGhost(null);return;
+      }
+    }
+    setFlash(cellIdx);setTimeout(()=>setFlash(null),400);
+  };
+
+  const reset=(m=month,d=day)=>{
+    setPlaced([]);setSelected(null);setGhost(null);
+    setHints(0);setDeadEnds(0);setStartTime(Date.now());
+    setMonth(m);setDay(Math.min(d,DAYS_IN[m]));
+  };
+
+  const usedNames=new Set(placed.map(p=>p.piece));
+  const cellSize="min(11.6vw,46px)";
+  const toneStyle={
+    info:{border:"#C9992E",bg:"#2E2018"},
+    ok:{border:"#7A9E6B",bg:"#26251a"},
+    danger:{border:"#C4472F",bg:"#331d17"},
+    win:{border:"#C9992E",bg:"#332a14"},
+  };
+
+  return(
+    <div className="min-h-screen w-full flex flex-col items-center px-3 py-5"
+      style={{background:"#221610",color:"#EFE6D8",fontFamily:"'Space Grotesk',system-ui,sans-serif"}}>
+
+      {/* Header */}
+      <div className="w-full max-w-md flex items-end justify-between mb-4">
+        <div>
+          <div style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:26,lineHeight:1}}>Le Compagnon</div>
+          <div style={{fontSize:11,opacity:0.6,marginTop:4,letterSpacing:"0.06em"}}>COACH A-PUZZLE-A-DAY</div>
+        </div>
+        <div className="flex gap-2">
+          <select value={month} onChange={e=>reset(Number(e.target.value),day)}
+            className="rounded px-2 py-1"
+            style={{background:"#3A2A1E",color:"#EFE6D8",border:"1px solid #4A362A",fontSize:14}}>
+            {MONTHS.map((m,i)=><option key={m} value={i}>{m}</option>)}
+          </select>
+          <select value={day} onChange={e=>reset(month,Number(e.target.value))}
+            className="rounded px-2 py-1"
+            style={{background:"#3A2A1E",color:"#EFE6D8",border:"1px solid #4A362A",fontSize:14}}>
+            {Array.from({length:DAYS_IN[month]},(_,i)=>i+1).map(d=><option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Plateau */}
+      <div className="rounded-2xl p-3"
+        style={{background:"linear-gradient(160deg,#E2CDA6,#CDB284)",boxShadow:"0 8px 24px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.4)"}}>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(7,${cellSize})`,gridAutoRows:cellSize,gap:2}}>
+          {Array.from({length:49},(_,k)=>{
+            const r=Math.floor(k/7),c=k%7;
+            const idx=IDX[r+","+c];
+            if(idx===undefined) return <div key={k}/>;
+            const isOpen=openIdx.includes(idx);
+            const occ=occupiedBy[idx];
+            const isGhost=ghost&&ghost.cells.includes(idx);
+            const isDead=deadCells.has(idx);
+            let bg="#D9C39C",inner="inset 0 1px 3px rgba(62,47,35,0.5)",txt="#6B5137";
+            if(occ){bg=PIECE_COLOR[occ.piece];inner="inset 0 -2px 4px rgba(0,0,0,0.25),inset 0 1px 0 rgba(255,255,255,0.3)";txt="transparent";}
+            if(isOpen){bg="#F3EAD5";txt="#3E2F23";inner="inset 0 0 0 2px #C9992E";}
+            return(
+              <button key={k} onClick={()=>!isOpen&&tryPlace(idx)}
+                style={{
+                  background:bg,borderRadius:6,boxShadow:inner,
+                  color:txt,fontSize:r<2?11:13,fontWeight:isOpen?700:500,
+                  border:"none",padding:0,cursor:isOpen?"default":"pointer",
+                  animation:isDead?"deadpulse 1s infinite":flash===idx?"shake 0.4s":"none",
+                  outline:isGhost?"3px dashed #C9992E":"none",outlineOffset:-3,
+                }}>
+                {cellLabel(idx)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Coach */}
+      <div className="w-full max-w-md mt-4 rounded-xl p-4"
+        style={{background:toneStyle[coach.tone].bg,borderLeft:`4px solid ${toneStyle[coach.tone].border}`}}>
+        <div style={{fontFamily:"'Fraunces',serif",fontStyle:"italic",fontSize:18,fontWeight:500}}>{coach.title}</div>
+        <div style={{fontSize:14,marginTop:6,lineHeight:1.5,opacity:0.92}}>{coach.text}</div>
+        {coach.principle&&(
+          <div style={{fontSize:11,marginTop:8,letterSpacing:"0.05em",color:"#C9992E",textTransform:"uppercase"}}>
+            Principe : {coach.principle}
+          </div>
+        )}
+        {ghost&&(
+          <div className="mt-3 pt-3" style={{borderTop:"1px solid rgba(239,230,216,0.15)"}}>
+            {ghost.why.map((w,i)=>(
+              <div key={i} style={{fontSize:13.5,lineHeight:1.5,marginBottom:6,opacity:0.92}}>
+                <span style={{color:"#C9992E",fontWeight:700}}>{i+1}.</span> {w}
+              </div>
+            ))}
+            <div className="flex gap-2 mt-2">
+              <button onClick={placeGhost} className="rounded px-3 py-1" style={{background:"#C9992E",color:"#221610",fontWeight:700,fontSize:13,border:"none",cursor:"pointer"}}>Poser cette pièce</button>
+              <button onClick={()=>setGhost(null)} className="rounded px-3 py-1" style={{background:"transparent",color:"#EFE6D8",fontSize:13,border:"1px solid #4A362A",cursor:"pointer"}}>Je cherche seul</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Jauge */}
+      {!won&&(
+        <div className="w-full max-w-md mt-3 flex items-center gap-2">
+          <div style={{fontSize:11,opacity:0.6,width:70}}>Chemins</div>
+          <div className="flex-1 rounded-full h-2" style={{background:"#3A2A1E"}}>
+            <div className="h-2 rounded-full" style={{
+              width:`${Math.max(2,100*Math.log(1+sols.length)/Math.log(1+Math.max(totalSols,2)))}%`,
+              background:sols.length===0?"#C4472F":"#C9992E",transition:"width 0.4s"
+            }}/>
+          </div>
+          <div style={{fontSize:12,fontWeight:700,width:56,textAlign:"right",color:sols.length===0?"#C4472F":"#C9992E"}}>
+            {sols.length}/{totalSols}
+          </div>
+        </div>
+      )}
+
+      {/* Pièces */}
+      <div className="w-full max-w-md mt-4 grid grid-cols-4 gap-2">
+        {PIECES.map(p=>{
+          const used=usedNames.has(p);
+          const isSel=selected===p;
+          const shape=ORIENTS[p][isSel?orientIdx%ORIENTS[p].length:0];
+          const mr=Math.max(...shape.map(s=>s[0]))+1,mc=Math.max(...shape.map(s=>s[1]))+1;
+          return(
+            <button key={p} disabled={used}
+              onClick={()=>{setSelected(isSel?null:p);setOrientIdx(0);setGhost(null);}}
+              className="rounded-lg p-2 flex items-center justify-center"
+              style={{
+                background:isSel?"#3A2A1E":"#2E2018",
+                border:isSel?"2px solid #C9992E":"1px solid #4A362A",
+                opacity:used?0.25:1,minHeight:64,cursor:used?"default":"pointer"
+              }}>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${mc},11px)`,gridAutoRows:"11px",gap:1}}>
+                {Array.from({length:mr*mc},(_,k)=>{
+                  const rr=Math.floor(k/mc),cc=k%mc;
+                  const on=shape.some(([a,b])=>a===rr&&b===cc);
+                  return<div key={k} style={{background:on?PIECE_COLOR[p]:"transparent",borderRadius:2}}/>;
+                })}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Contrôles */}
+      <div className="w-full max-w-md mt-3 flex gap-2 flex-wrap">
+        {selected&&(
+          <>
+            <button onClick={()=>setOrientIdx(i=>i+1)} className="rounded px-3 py-2"
+              style={{background:"#3A2A1E",color:"#EFE6D8",border:"1px solid #4A362A",fontSize:13,cursor:"pointer"}}>
+              ↻ Tourner / retourner
+            </button>
+            <div style={{fontSize:12,opacity:0.6,alignSelf:"center"}}>puis touche une case</div>
+          </>
+        )}
+        {!selected&&!won&&(
+          <button onClick={advise} disabled={sols.length===0} className="rounded px-4 py-2"
+            style={{background:sols.length===0?"#3A2A1E":"#C9992E",color:sols.length===0?"#7a6a5a":"#221610",fontWeight:700,fontSize:14,border:"none",cursor:sols.length===0?"default":"pointer"}}>
+            Conseille-moi
+          </button>
+        )}
+        {placed.length>0&&(
+          <button onClick={()=>{setPlaced(p=>p.slice(0,-1));setGhost(null);}} className="rounded px-3 py-2"
+            style={{background:"#3A2A1E",color:"#EFE6D8",border:"1px solid #4A362A",fontSize:13,cursor:"pointer"}}>
+            ← Retirer la dernière
+          </button>
+        )}
+        <button onClick={()=>reset()} className="rounded px-3 py-2 ml-auto"
+          style={{background:"transparent",color:"#EFE6D8",border:"1px solid #4A362A",fontSize:13,cursor:"pointer"}}>
+          Recommencer
+        </button>
+      </div>
+
+      <div className="w-full max-w-md mt-4" style={{fontSize:11.5,opacity:0.4,lineHeight:1.6}}>
+        Choisis une pièce, tourne-la, touche le plateau pour la poser. Touche une pièce posée pour la retirer.
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
