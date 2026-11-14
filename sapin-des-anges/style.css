@@ -18,6 +18,7 @@
   color-scheme:dark }}
 
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5;
   padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
@@ -126,3 +127,39 @@ form.add .actions{display:flex;justify-content:flex-end}
 .admin th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .tablewrap{overflow-x:auto}
 .linkbox{font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all;color:var(--muted)}
+
+/* ---------- Betlehem : façade, fenêtres et entrée en 3D ---------- */
+.facade,.room{display:flex;flex-direction:column;gap:20px}
+.room{animation:roomIn .5s ease-out}
+@keyframes roomIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.roombar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+html.zooming,html.noscroll{overflow:hidden}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;opacity:0;
+  background:radial-gradient(circle at 50% 50%,#FFF3C4 0%,#F2C35B 35%,var(--bg) 85%);transition:opacity .45s ease-out}
+html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
+.stage{position:relative;width:100%;max-width:560px;margin:0 auto;perspective:900px}
+.scene{position:relative;transition:transform .85s cubic-bezier(.55,0,.85,.35)}
+.stage.zoom .scene{transform:translateZ(780px)}
+.stage.instant .scene{transition:none}
+.scene img{display:block;width:100%;height:auto;border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
+.door{position:absolute;padding:0;margin:0;border:0;background:none;cursor:pointer;perspective:700px;-webkit-tap-highlight-color:transparent}
+.door .inside{position:absolute;inset:0;border-radius:4px;
+  background:radial-gradient(circle at 50% 62%,#FFF6D2 0%,#F4C85F 34%,#8A5418 78%,#4A2A0A 100%);box-shadow:inset 0 0 16px rgba(0,0,0,.65)}
+.door .leaf{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;border-radius:4px;
+  background-image:url(/creche.jpg);background-size:var(--bs);background-position:var(--bp);filter:brightness(1.08) saturate(1.05);
+  box-shadow:0 0 0 2px rgba(255,236,190,.9),0 4px 10px rgba(0,0,0,.45);outline:1.5px dashed rgba(60,35,10,.6);outline-offset:-5px;
+  transform-origin:left center;transition:transform .65s cubic-bezier(.3,.7,.3,1);backface-visibility:hidden}
+.door:hover .leaf{transform:rotateY(-16deg)}
+.door.open .leaf,.door.open:hover .leaf{transform:rotateY(-112deg)}
+.door.mine .leaf{box-shadow:0 0 0 3px #F2C35B,0 0 18px 4px rgba(242,195,91,.75),0 4px 10px rgba(0,0,0,.45)}
+.door:focus-visible{outline:3px solid #F2C35B;outline-offset:3px;border-radius:6px}
+.door .plate{margin-bottom:7%;max-width:94%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:#FBF3E1;color:#3B2410;font-family:var(--font-display);font-size:clamp(12px,2.8vw,16px);line-height:1;
+  padding:4px 9px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.door.noel .plate{background:#1B2A55;color:#F6D27A;letter-spacing:.08em}
+.door .badge{position:absolute;top:-8px;right:-8px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:999px;
+  display:grid;place-items:center;background:#B03A35;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.door.shake{animation:doorShake .5s}
+@keyframes doorShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+.facade .chips{justify-content:center}
+@media (prefers-reduced-motion:reduce){.scene,.door .leaf,body::after{transition:none!important}.room,.door.shake{animation:none}}

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
-<title>Sapin des Anges · Organisation</title>
+<title>Betlehem des Anges · Organisation</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -13,7 +13,7 @@
 <div class="wrap admin">
   <header class="top">
     <div>
-      <h1>Organisation du sapin</h1>
+      <h1>Organisation du Betlehem</h1>
       <p class="sub">Ajoute les membres de la famille et envoie à chacun son lien personnel. Cette page ne montre aucune idée ni réservation : tu peux l’utiliser sans gâcher tes propres surprises.</p>
     </div>
   </header>
@@ -44,7 +44,7 @@ async function api(action, data = {}) {
   return j;
 }
 const linkOf = (p) => location.origin + '/?t=' + p.token;
-const messageOf = (p) => `Coucou ${p.name} ! Voici ton lien personnel pour le Sapin des Anges, notre liste de cadeaux pour Noël : ${linkOf(p)}\nÀ la première ouverture, choisis un code à 4 chiffres. Ce lien est à toi : ne le transfère pas.`;
+const messageOf = (p) => `Coucou ${p.name} ! Voici ton lien personnel pour le Betlehem des Anges, notre liste de cadeaux pour Noël : ${linkOf(p)}\nÀ la première ouverture, choisis un code à 4 chiffres. Ce lien est à toi : ne le transfère pas.`;
 async function copy(text, btn) {
   try { await navigator.clipboard.writeText(text); toast('Copié.'); }
   catch { prompt('Copie ce texte :', text); }
@@ -74,7 +74,7 @@ document.addEventListener('click', async (e) => {
     if (b.dataset.a === 'link') return copy(linkOf(p));
     if (b.dataset.a === 'rename') { const n = prompt('Nouveau prénom', p.name); if (n && n.trim()) { await api('adminRename', { id: p.id, name: n }); toast('Renommé.'); } }
     if (b.dataset.a === 'reset') { if (confirm(`Réinitialiser l’accès de ${p.name} ? Son lien actuel ne marchera plus et il faudra lui envoyer le nouveau.`)) { await api('adminReset', { id: p.id }); toast('Nouveau lien créé. Envoie-le à ' + p.name + '.'); } }
-    if (b.dataset.a === 'del') { if (confirm(`Supprimer ${p.name} du sapin ? Ses vœux, les idées pour lui ou elle et ses participations seront effacés.`)) { await api('adminDelete', { id: p.id }); toast('Supprimé.'); } }
+    if (b.dataset.a === 'del') { if (confirm(`Supprimer ${p.name} du Betlehem ? Ses vœux, les idées pour lui ou elle et ses participations seront effacés.`)) { await api('adminDelete', { id: p.id }); toast('Supprimé.'); } }
   } catch (x) { toast(x.message); }
   load();
 });
