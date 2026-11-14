@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Sapin des Anges · Organisation</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap admin">
+  <header class="top">
+    <div>
+      <h1>Organisation du sapin</h1>
+      <p class="sub">Ajoute les membres de la famille et envoie à chacun son lien personnel. Cette page ne montre aucune idée ni réservation : tu peux l’utiliser sans gâcher tes propres surprises.</p>
+    </div>
+  </header>
+  <section class="panel" id="panel"><p class="lead">Chargement…</p></section>
+  <form class="panel" id="addForm">
+    <h3>Ajouter une personne</h3>
+    <div class="inline">
+      <label class="people" for="newName">Prénom</label>
+      <input type="text" id="newName" maxlength="40" required placeholder="Ex. Nagymama">
+      <button class="btn primary" type="submit">Ajouter</button>
+    </div>
+    <p class="small">Pense à t’ajouter toi aussi : tu utiliseras ton propre lien comme les autres.</p>
+  </form>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2400); }
+let key = '';
+try { key = new URLSearchParams(location.hash.slice(1)).get('k') || sessionStorage.getItem('sapinKey') || ''; } catch {}
+try { if (key) sessionStorage.setItem('sapinKey', key); } catch {}
+let people = [];
+async function api(action, data = {}) {
+  const r = await fetch('/api/app', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, key, ...data }) });
+  let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) throw new Error(j.error || 'Erreur réseau.');
+  return j;
+}
+const linkOf = (p) => location.origin + '/?t=' + p.token;
+const messageOf = (p) => `Coucou ${p.name} ! Voici ton lien personnel pour le Sapin des Anges, notre liste de cadeaux pour Noël : ${linkOf(p)}\nÀ la première ouverture, choisis un code à 4 chiffres. Ce lien est à toi : ne le transfère pas.`;
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); toast('Copié.'); }
+  catch { prompt('Copie ce texte :', text); }
+}
+async function load() {
+  if (!key) { $('#panel').innerHTML = '<p class="warn">Il manque la clé d’administration dans l’adresse.</p>'; return; }
+  try { people = (await api('adminList')).people; }
+  catch (e) { $('#panel').innerHTML = `<p class="warn">${esc(e.message)}</p>`; return; }
+  const done = people.filter((p) => p.hasPin).length;
+  $('#panel').innerHTML = `<h3>Famille · ${people.length} personne${people.length > 1 ? 's' : ''} · ${done} accès activé${done > 1 ? 's' : ''}</h3>
+    ${people.length ? `<div class="tablewrap"><table>
+      <thead><tr><th>Prénom</th><th>Accès</th><th>Lien</th><th></th></tr></thead>
+      <tbody>${people.map((p) => `<tr>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td>${p.hasPin ? '<span class="tag ok">Code choisi</span>' : '<span class="tag">En attente</span>'}</td>
+        <td><div class="inline"><button class="btn" data-a="msg" data-id="${p.id}">Copier le message</button><button class="btn ghost" data-a="link" data-id="${p.id}">Copier le lien seul</button></div></td>
+        <td><div class="inline"><button class="btn ghost" data-a="rename" data-id="${p.id}">Renommer</button><button class="btn ghost" data-a="reset" data-id="${p.id}">Réinitialiser</button><button class="btn ghost" data-a="del" data-id="${p.id}">Supprimer</button></div></td>
+      </tr>`).join('')}</tbody></table></div>
+      <p class="small">« Réinitialiser » crée un nouveau lien et efface le code : à utiliser si quelqu’un a oublié son code, ou si son lien a été ouvert par une autre personne. L’ancien lien ne marche plus.</p>`
+    : '<p class="empty">Personne pour l’instant. Commence par t’ajouter ci-dessous.</p>'}`;
+}
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  const p = people.find((x) => x.id === b.dataset.id); if (!p) return;
+  try {
+    if (b.dataset.a === 'msg') return copy(messageOf(p));
+    if (b.dataset.a === 'link') return copy(linkOf(p));
+    if (b.dataset.a === 'rename') { const n = prompt('Nouveau prénom', p.name); if (n && n.trim()) { await api('adminRename', { id: p.id, name: n }); toast('Renommé.'); } }
+    if (b.dataset.a === 'reset') { if (confirm(`Réinitialiser l’accès de ${p.name} ? Son lien actuel ne marchera plus et il faudra lui envoyer le nouveau.`)) { await api('adminReset', { id: p.id }); toast('Nouveau lien créé. Envoie-le à ' + p.name + '.'); } }
+    if (b.dataset.a === 'del') { if (confirm(`Supprimer ${p.name} du sapin ? Ses vœux, les idées pour lui ou elle et ses participations seront effacés.`)) { await api('adminDelete', { id: p.id }); toast('Supprimé.'); } }
+  } catch (x) { toast(x.message); }
+  load();
+});
+$('#addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const n = $('#newName').value.trim(); if (!n) return;
+  try { await api('adminAdd', { name: n }); $('#newName').value = ''; toast(n + ' ajouté.'); } catch (x) { toast(x.message); }
+  load();
+});
+load();
+</script>
+</body>
+</html>

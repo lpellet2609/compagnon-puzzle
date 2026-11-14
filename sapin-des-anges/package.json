@@ -1,0 +1,6 @@
+{
+  "name": "sapin-des-anges",
+  "private": true,
+  "description": "Liste de cadeaux familiale pour Szenteste : vœux, idées secrètes, réservations et cadeaux communs.",
+  "engines": { "node": "22.x" }
+}

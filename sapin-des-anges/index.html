@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Le Sapin des Anges</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 4,28 28,28' fill='%231E5A3C'/%3E%3Ccircle cx='16' cy='17' r='3' fill='%23D2A23A'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap" id="root"><p class="lead">Chargement du sapin…</p></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const eur = (n) => Number(n).toLocaleString('fr-FR') + ' €';
+const COLORS = ['--o1', '--o3', '--o2', '--o4', '--o6', '--o7', '--o5', '--o8'];
+// Boules réparties en rangées (1, 2, 2, 3) pour que les prénoms ne se chevauchent pas.
+function positions(n) {
+  const cap = [1, 2, 2, 3], ys = [100, 168, 236, 302], spread = { 2: [48, 62, 80], 3: [85] };
+  const rows = []; let left = Math.min(n, 8);
+  for (let r = 0; r < 4 && left > 0; r++) { const k = Math.min(cap[r], left); rows.push(k); left -= k; }
+  const out = [];
+  rows.forEach((k, r) => {
+    if (k === 1) out.push([160, ys[r]]);
+    if (k === 2) { const d = spread[2][Math.min(r - 1, 2)] || 55; out.push([160 - d, ys[r]], [160 + d, ys[r]]); }
+    if (k === 3) out.push([160 - 85, ys[r]], [160, ys[r]], [160 + 85, ys[r]]);
+  });
+  return out;
+}
+const short = (s) => (s.length > 11 ? s.slice(0, 10) + '…' : s);
+let S = null, sel = null, openShare = null, busy = false;
+
+function toast(t) {
+  const el = $('#toast'); el.textContent = t; el.classList.add('on');
+  clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2600);
+}
+async function api(action, data = {}) {
+  const r = await fetch('/api/app', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...data }),
+  });
+  let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) { const e = new Error(j.error || 'Connexion impossible. Vérifie ton réseau.'); e.status = r.status; throw e; }
+  return j;
+}
+const nm = (id) => { const p = S.people.find((x) => x.id === id); return p ? p.name : 'un ancien membre'; };
+const who = (id) => (id === S.me ? 'moi' : esc(nm(id)));
+
+// ---------- Écrans d'accès ----------
+function screen(html) { $('#root').innerHTML = `<div class="gate">${html}</div>`; }
+function showMessage(title, msg) {
+  screen(`<h1>Le Sapin des Anges</h1><h2>${esc(title)}</h2><p class="lead">${esc(msg)}</p>`);
+}
+function showPin(token, h) {
+  const choose = !h.hasPin;
+  screen(`<h1>Le Sapin des Anges</h1>
+    <h2>Bonjour ${esc(h.name)} !</h2>
+    <p class="lead">${choose
+      ? 'Choisis ton code secret à 4 chiffres. Il protège tes surprises si quelqu’un d’autre utilise ton téléphone ou ta tablette. Évite ton année de naissance.'
+      : 'Tape ton code secret à 4 chiffres.'}</p>
+    <form id="pinForm" class="pinform" autocomplete="off">
+      <div class="field"><label for="pin1">${choose ? 'Mon code' : 'Code'}</label>
+        <input id="pin1" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autofocus></div>
+      ${choose ? `<div class="field"><label for="pin2">Je le retape</label>
+        <input id="pin2" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required></div>` : ''}
+      <p class="warn" id="pinErr" role="alert"></p>
+      <button class="btn primary" type="submit">${choose ? 'Choisir ce code' : 'Entrer'}</button>
+    </form>
+    <p class="small">${choose
+      ? 'Ce lien est personnel : ne le transfère à personne.'
+      : 'Code oublié ? Demande à l’organisateur de réinitialiser ton lien.'}</p>`);
+  $('#pinForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const p1 = $('#pin1').value.trim();
+    const err = $('#pinErr');
+    if (choose && p1 !== $('#pin2').value.trim()) { err.textContent = 'Les deux codes ne sont pas identiques.'; return; }
+    try {
+      await api(choose ? 'setPin' : 'login', { token, pin: p1 });
+      history.replaceState(null, '', location.pathname);
+      await loadApp(h.id);
+    } catch (x) { err.textContent = x.message; $('#pin1').value = ''; if ($('#pin2')) $('#pin2').value = ''; $('#pin1').focus(); }
+  });
+}
+
+async function boot() {
+  const token = new URLSearchParams(location.search).get('t');
+  if (token) {
+    let h;
+    try { h = await api('hello', { token }); }
+    catch (e) { showMessage('Lien non reconnu', e.message); return; }
+    try {
+      const st = await api('state');
+      if (st.me === h.id) { history.replaceState(null, '', location.pathname); S = st; startApp(); return; }
+    } catch {}
+    showPin(token, h);
+    return;
+  }
+  try { S = await api('state'); startApp(); }
+  catch (e) {
+    if (e.status === 401) showMessage('Bienvenue', 'Pour accéder au sapin, ouvre le lien personnel que l’organisateur t’a envoyé.');
+    else showMessage('Oups', e.message);
+  }
+}
+async function loadApp() { S = await api('state'); sel = null; startApp(); }
+
+// ---------- Application ----------
+function startApp() {
+  if (!sel || !S.people.some((p) => p.id === sel)) sel = S.me;
+  $('#root').innerHTML = `
+    <header class="top">
+      <div>
+        <h1>Le Sapin des Anges</h1>
+        <p class="sub">Bonjour <strong>${esc(nm(S.me))}</strong>. Touche une boule pour voir ou proposer des idées de cadeaux.</p>
+      </div>
+      <div class="controls">
+        <p class="count" id="countdown"></p>
+        <button class="btn ghost" id="logout" type="button">Ce n’est pas moi</button>
+      </div>
+    </header>
+    <div class="grid">
+      <aside class="treecol"><div class="treebox" id="tree"></div><div class="chips" id="chips" aria-label="Choisir une boule"></div></aside>
+      <main class="panel" id="panel"></main>
+    </div>
+    <section class="section">
+      <h3>Qui voit quoi</h3>
+      <div class="legend">
+        <div><b>Mes vœux</b>Visibles par toute la famille.</div>
+        <div><b>Idées secrètes pour moi</b>Visibles par les autres, cachées pour moi jusqu’au 24 au soir.</div>
+        <div><b>Réservations et cagnottes</b>Jamais visibles par la personne qui reçoit. Les autres voient le total et le reste à financer ; seul l’acheteur voit qui a mis combien.</div>
+      </div>
+    </section>`;
+  $('#logout').addEventListener('click', async () => {
+    try { await api('logout'); } catch {}
+    showMessage('À bientôt', 'Tu es déconnecté de cet appareil. Pour revenir, rouvre ton lien personnel.');
+  });
+  render();
+}
+function visible(pid) { return S.ideas.filter((i) => i.forId === pid); }
+function countdown() {
+  const el = $('#countdown'); if (!el) return;
+  if (S.revealed) { el.innerHTML = '<b>Szenteste</b> · Boldog karácsonyt !'; return; }
+  const d = Math.max(0, Math.ceil((S.revealAt - Date.now()) / 864e5));
+  el.innerHTML = `<b>${d}</b> jour${d > 1 ? 's' : ''} avant Szenteste`;
+}
+function renderTree() {
+  const POS = positions(S.people.length);
+  const orn = S.people.slice(0, 8).map((p, k) => {
+    const [x, y] = POS[k]; const n = visible(p.id).length; const s = p.id === sel ? ' sel' : '';
+    return `<g class="orn${s}" data-person="${p.id}" role="button" tabindex="0" aria-label="Boule de ${esc(p.name)}, ${n} idée${n > 1 ? 's' : ''}">
+      <line x1="${x}" y1="${y - 26}" x2="${x}" y2="${y - 19}" stroke="var(--gold)" stroke-width="2"/>
+      <circle class="ring" cx="${x}" cy="${y}" r="24"/>
+      <circle class="ball" cx="${x}" cy="${y}" r="19" fill="var(${COLORS[k]})"/>
+      <circle cx="${x - 6}" cy="${y - 7}" r="5" fill="#fff" opacity=".35"/>
+      <circle cx="${x + 15}" cy="${y - 14}" r="9" fill="var(--surface)" stroke="var(--gold)" stroke-width="1.5"/>
+      <text x="${x + 15}" y="${y - 10}" text-anchor="middle" style="font-size:10px">${n}</text>
+      <text class="lbl" x="${x}" y="${y + 35}" text-anchor="middle">${esc(short(p.name))}</text>
+    </g>`;
+  }).join('');
+  const flames = [[100, 150], [220, 150], [75, 230], [245, 230], [50, 315], [270, 315]].map(([x, y]) =>
+    `<rect x="${x - 2}" y="${y - 12}" width="4" height="10" rx="1" fill="var(--o5)"/><ellipse class="flame" cx="${x}" cy="${y - 16}" rx="3" ry="5"/>`).join('');
+  $('#tree').innerHTML = `<svg viewBox="0 0 320 370" class="${S.revealed ? 'lit' : ''}" aria-label="Sapin de la famille">
+    <polygon points="160,160 40,318 280,318" fill="var(--pine)"/>
+    <polygon points="160,92 68,232 252,232" fill="var(--pine-2)"/>
+    <polygon points="160,36 94,152 226,152" fill="var(--pine-3)"/>
+    <rect x="146" y="318" width="28" height="34" rx="3" fill="var(--trunk)"/>
+    <path d="M108 140 Q160 168 214 138 M84 220 Q160 258 238 218 M58 300 Q160 342 262 300" fill="none" stroke="var(--gold)" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/>
+    ${flames}
+    <polygon points="160,14 166,30 183,30 169,40 174,56 160,46 146,56 151,40 137,30 154,30" fill="var(--gold)"/>
+    ${orn}
+  </svg>`;
+  $('#chips').innerHTML = S.people.map((p) => `<button class="chip" type="button" data-person="${p.id}" aria-pressed="${p.id === sel}">${esc(p.name)}${p.id === S.me ? ' (moi)' : ''}</button>`).join('');
+}
+const stars = (n) => n ? '★'.repeat(n) + '<span style="opacity:.3">' + '★'.repeat(3 - n) + '</span>' : '';
+function metaLine(i, secretLabel) {
+  return `<div class="meta">${i.prio ? `<span class="stars" aria-label="envie ${i.prio} sur 3">${stars(i.prio)}</span>` : ''}
+    ${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer">voir le lien</a>` : ''}
+    ${secretLabel ? `<span class="who secret">${secretLabel}</span>` : ''}</div>`;
+}
+function cardMine(i) {
+  const secret = i.byId !== i.forId;
+  return `<div class="card${secret ? ' secret' : ''}">
+    <div class="row"><span class="title">${esc(i.title)}</span>${i.price ? `<span class="price">${eur(i.price)}</span>` : ''}</div>
+    ${metaLine(i, secret ? 'Imaginée par ' + esc(nm(i.byId)) : '')}
+    ${secret ? '' : `<div class="status"><button class="btn ghost" data-act="removeIdea" data-id="${i.id}">Retirer de ma liste</button></div>`}
+  </div>`;
+}
+function contribForm(i, suggest, label) {
+  return `<div class="inline"><label for="amt-${i.id}" class="people">${label}</label>
+    <input type="number" id="amt-${i.id}" min="1" step="1" value="${suggest || ''}" inputmode="numeric"><span>€</span>
+    <button class="btn primary" data-act="contribute" data-id="${i.id}">Participer</button>
+    ${openShare === i.id ? `<button class="btn ghost" data-act="closeShare" data-id="${i.id}">Annuler</button>` : ''}</div>`;
+}
+function statusOther(i) {
+  const pot = i.pot;
+  if (i.removed) {
+    return `<p class="warn">${esc(nm(i.forId))} a retiré ce vœu de sa liste. Tu l’avais réservé : vérifie avant d’acheter.</p>
+      <div class="status">${i.fullBy === S.me ? `<button class="btn" data-act="cancelOffer" data-id="${i.id}">Annuler ma réservation</button>` : ''}
+      ${pot && pot.mine != null ? `<button class="btn" data-act="leave" data-id="${i.id}">Retirer ma part</button>` : ''}</div>`;
+  }
+  if (i.fullBy) {
+    return `<div class="status"><span class="tag ok">${i.fullBy === S.me ? 'Je l’offre' : 'Offert par ' + esc(nm(i.fullBy))}</span>
+      ${i.fullBy === S.me ? `<button class="btn ghost" data-act="cancelOffer" data-id="${i.id}">Annuler</button>` : ''}</div>`;
+  }
+  if (pot) {
+    const p = i.price, t = pot.total, done = pot.remaining === 0, pct = Math.min(100, Math.round(t / p * 100));
+    return `<div class="pot">
+      <div class="line"><strong>Cadeau commun</strong><span>${eur(t)} / ${eur(p)}${done ? ' · financé' : ` · reste ${eur(pot.remaining)}`}</span></div>
+      <div class="bar${done ? ' full' : ''}"><span style="width:${pct}%"></span></div>
+      <p class="people">${pot.count} participant${pot.count > 1 ? 's' : ''} · achat : ${pot.buyer ? who(pot.buyer) : 'à désigner'}${pot.mine != null ? ` · ma part : ${eur(pot.mine)}` : ''}</p>
+      ${pot.detail ? `<p class="people">À récupérer (visible par toi seul, l’acheteur) : ${pot.detail.filter((d) => d.by !== S.me).map((d) => `${esc(nm(d.by))} ${eur(d.amount)}`).join(' · ') || 'personne pour l’instant'}</p>` : ''}
+      ${pot.mine != null
+        ? `<div class="inline">${pot.buyer !== S.me ? `<button class="btn" data-act="takeBuyer" data-id="${i.id}">Je m’occupe de l’achat</button>` : ''}
+           <button class="btn ghost" data-act="leave" data-id="${i.id}">Retirer ma part</button></div>`
+        : done ? '' : contribForm(i, pot.remaining, 'Je mets')}
+    </div>`;
+  }
+  if (openShare === i.id) {
+    return `<div class="pot"><div class="line"><strong>Lancer un cadeau commun</strong><span>prix ${eur(i.price)}</span></div>
+      ${contribForm(i, Math.round(i.price / 2), 'Je mets')}
+      <p class="people">Tu seras l’acheteur par défaut. Les autres verront seulement le total et ce qu’il reste.</p></div>`;
+  }
+  return `<div class="status">
+    <button class="btn primary" data-act="offer" data-id="${i.id}">Je l’offre</button>
+    ${i.price ? `<button class="btn" data-act="openShare" data-id="${i.id}">Cadeau commun</button>` : '<span class="small">Sans prix indiqué, pas de cadeau commun possible.</span>'}
+  </div>`;
+}
+function cardOther(i) {
+  const secret = i.byId !== i.forId;
+  return `<div class="card${secret ? ' secret' : ''}${i.removed ? ' removed' : ''}">
+    <div class="row"><span class="title">${esc(i.title)}</span>${i.price ? `<span class="price">${eur(i.price)}</span>` : '<span class="meta">prix non indiqué</span>'}</div>
+    ${metaLine(i, secret ? 'Idée secrète de ' + who(i.byId) : '')}
+    ${statusOther(i)}
+    ${i.byId === S.me && !i.removed ? `<div class="status"><button class="btn ghost" data-act="removeIdea" data-id="${i.id}">Retirer mon idée</button></div>` : ''}
+  </div>`;
+}
+function renderPanel() {
+  const own = sel === S.me, name = nm(sel), list = visible(sel);
+  let html = `<div class="section"><span class="who ${own ? 'mine' : 'secret'}" style="align-self:flex-start">${own ? 'Ma boule' : 'Invisible pour ' + esc(name)}</span>
+    <h2>${own ? 'Ma lettre aux anges' : 'La boule de ' + esc(name)}</h2>
+    <p class="lead">${own
+      ? 'Tes vœux pour le 24 au soir. Toute la famille les voit. Tu ne vois pas ce qui est réservé, ni les idées que les autres ont glissées pour toi.'
+      : `Les vœux de ${esc(name)} et les idées glissées en secret par la famille. ${esc(name)} ne voit ni les idées secrètes, ni les réservations, ni les cagnottes.`}</p></div>`;
+  if (own) {
+    const mine = list.filter((i) => i.byId === S.me), secrets = list.filter((i) => i.byId !== S.me);
+    if (S.revealed) html += `<div class="reveal"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round"/></svg><p><strong>La clochette a sonné.</strong> Les anges sont passés : voici les idées que la famille avait imaginées pour toi.</p></div>`;
+    html += `<div class="section"><h3>Mes vœux</h3><div class="list">${mine.length ? mine.map(cardMine).join('') : '<p class="empty">Ta lettre est encore vide. Ajoute ton premier vœu ci-dessous.</p>'}</div></div>`;
+    if (S.revealed) html += `<div class="section"><h3>Ce que la famille avait imaginé</h3><div class="list">${secrets.length ? secrets.map(cardMine).join('') : '<p class="empty">Aucune idée secrète cette année.</p>'}</div></div>`;
+  } else {
+    const wishes = list.filter((i) => i.byId === sel), secrets = list.filter((i) => i.byId !== sel);
+    html += `<div class="section"><h3>Ses vœux</h3><div class="list">${wishes.length ? wishes.map(cardOther).join('') : `<p class="empty">${esc(name)} n’a encore rien demandé.</p>`}</div></div>`;
+    html += `<div class="section"><h3>Idées secrètes de la famille</h3><div class="list">${secrets.length ? secrets.map(cardOther).join('') : '<p class="empty">Aucune idée secrète pour le moment.</p>'}</div></div>`;
+  }
+  html += `<form class="add" id="addForm">
+    <div class="field full"><h3>${own ? 'Ajouter un vœu' : 'Glisser une idée secrète pour ' + esc(name)}</h3></div>
+    <div class="field"><label for="f-title">Idée</label><input type="text" id="f-title" maxlength="140" required placeholder="${own ? 'Ex. un pull en laine vert' : 'Ex. une journée au spa'}"></div>
+    <div class="field"><label for="f-price">Prix indicatif (€)</label><input type="number" id="f-price" min="1" step="1" inputmode="numeric" placeholder="optionnel"></div>
+    <div class="field"><label for="f-link">Lien</label><input type="url" id="f-link" maxlength="500" placeholder="https:// (optionnel)"></div>
+    ${own ? `<div class="field"><label for="f-prio">Envie</label><select id="f-prio"><option value="3">★★★ Très envie</option><option value="2" selected>★★ Envie</option><option value="1">★ Si possible</option></select></div>` : '<div></div>'}
+    <div class="actions full"><button class="btn primary" type="submit">${own ? 'Ajouter à ma lettre' : 'Glisser l’idée en secret'}</button></div>
+  </form>`;
+  $('#panel').innerHTML = html;
+}
+function render() { renderTree(); renderPanel(); countdown(); }
+
+async function refresh() {
+  try { S = await api('state'); render(); }
+  catch (e) { if (e.status === 401) showMessage('Session terminée', e.message); }
+}
+async function act(action, data, msg) {
+  if (busy) return; busy = true;
+  try { await api(action, data); openShare = null; if (msg) toast(msg); }
+  catch (e) { toast(e.message); }
+  finally { busy = false; await refresh(); }
+}
+
+document.addEventListener('click', (e) => {
+  if (!S) return;
+  const o = e.target.closest('[data-person]');
+  if (o) { sel = o.dataset.person; openShare = null; render(); if (innerWidth < 820) $('#panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = b.dataset.id;
+  const i = S.ideas.find((x) => x.id === id);
+  switch (b.dataset.act) {
+    case 'openShare': openShare = id; render(); break;
+    case 'closeShare': openShare = null; render(); break;
+    case 'offer': act('offer', { id }, `Réservé. ${nm(i.forId)} ne le verra pas.`); break;
+    case 'cancelOffer': act('cancelOffer', { id }, 'Réservation annulée.'); break;
+    case 'contribute': {
+      const v = Math.round(Number($('#amt-' + id).value));
+      if (!(v >= 1)) { toast('Indique un montant.'); return; }
+      act('contribute', { id, amount: v }, 'Participation enregistrée.'); break;
+    }
+    case 'leave': act('leave', { id }, 'Part retirée.'); break;
+    case 'takeBuyer': act('takeBuyer', { id }, 'Tu t’occupes de l’achat.'); break;
+    case 'removeIdea':
+      if (confirm('Retirer cette idée ?')) act('removeIdea', { id }, 'Idée retirée.');
+      break;
+  }
+});
+document.addEventListener('keydown', (e) => {
+  const o = e.target.closest && e.target.closest('g[data-person]');
+  if (o && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); o.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+});
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'addForm') return;
+  e.preventDefault();
+  const title = $('#f-title').value.trim(); if (!title) return;
+  act('addIdea', {
+    forId: sel, title, price: $('#f-price').value || null, link: $('#f-link').value.trim(),
+    prio: $('#f-prio') ? Number($('#f-prio').value) : 0,
+  }, sel === S.me ? 'Ajouté à ta lettre.' : 'Idée glissée en secret.');
+});
+document.addEventListener('visibilitychange', () => { if (S && document.visibilityState === 'visible') refresh(); });
+setInterval(() => { if (S && document.visibilityState === 'visible' && !busy && !openShare && !document.activeElement.matches('input,select')) refresh(); }, 60000);
+boot();
+</script>
+</body>
+</html>
