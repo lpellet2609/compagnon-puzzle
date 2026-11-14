@@ -186,6 +186,39 @@ const cleanName = (n) => {
   return s;
 };
 
+// ---------- Codes et lien de groupe ----------
+async function setPinFor(res, p, pin, takenMsg) {
+  if (p.pinHash) fail(409, takenMsg);
+  checkPinStrength(pin);
+  p.pinSalt = rand(16);
+  p.pinHash = hashPin(pin, p.pinSalt);
+  p.pinSetAt = Date.now();
+  await savePerson(p);
+  await openSession(res, p.id);
+  return { ok: true };
+}
+async function loginFor(res, p, pin) {
+  if (!p.pinHash) fail(409, 'Choisis d’abord ton code.');
+  const fails = Number(await cmd('GET', P + 'fail:' + p.id)) || 0;
+  if (fails >= MAX_FAILS) fail(429, 'Trop d’essais. Réessaie dans 15 minutes.');
+  const ok = typeof pin === 'string' && /^\d{4}$/.test(pin) &&
+    crypto.timingSafeEqual(Buffer.from(hashPin(pin, p.pinSalt), 'hex'), Buffer.from(p.pinHash, 'hex'));
+  if (!ok) {
+    await pipe([['INCR', P + 'fail:' + p.id], ['EXPIRE', P + 'fail:' + p.id, LOCK_SECONDS]]);
+    const left = MAX_FAILS - fails - 1;
+    fail(403, left > 0 ? `Code incorrect. Encore ${left} essai${left > 1 ? 's' : ''}.` : 'Code incorrect. Accès bloqué 15 minutes.');
+  }
+  await cmd('DEL', P + 'fail:' + p.id);
+  await openSession(res, p.id);
+  return { ok: true };
+}
+async function checkInvite(code) {
+  const real = await cmd('GET', P + 'invite');
+  const a = crypto.createHash('sha256').update(String(code || '')).digest();
+  const b = crypto.createHash('sha256').update(String(real || '')).digest();
+  if (!real || !code || !crypto.timingSafeEqual(a, b)) fail(404, 'Ce lien de groupe n’est pas (ou plus) valable. Demande le nouveau lien à l’organisateur.');
+}
+
 // ---------- Routeur ----------
 async function route(req, res, b) {
   const a = b.action;
@@ -197,30 +230,27 @@ async function route(req, res, b) {
   }
   if (a === 'setPin') {
     const p = await personByToken(b.token);
-    if (p.pinHash) fail(409, 'Un code a déjà été choisi pour ce lien. Tape-le, ou demande une réinitialisation.');
-    checkPinStrength(b.pin);
-    p.pinSalt = rand(16);
-    p.pinHash = hashPin(b.pin, p.pinSalt);
-    p.pinSetAt = Date.now();
-    await savePerson(p);
-    await openSession(res, p.id);
-    return { ok: true };
+    return setPinFor(res, p, b.pin, 'Un code a déjà été choisi pour ce lien. Tape-le, ou demande une réinitialisation.');
   }
-  if (a === 'login') {
-    const p = await personByToken(b.token);
-    if (!p.pinHash) fail(409, 'Choisis d’abord ton code.');
-    const fails = Number(await cmd('GET', P + 'fail:' + p.id)) || 0;
-    if (fails >= MAX_FAILS) fail(429, 'Trop d’essais. Réessaie dans 15 minutes.');
-    const ok = typeof b.pin === 'string' && /^\d{4}$/.test(b.pin) &&
-      crypto.timingSafeEqual(Buffer.from(hashPin(b.pin, p.pinSalt), 'hex'), Buffer.from(p.pinHash, 'hex'));
-    if (!ok) {
-      await pipe([['INCR', P + 'fail:' + p.id], ['EXPIRE', P + 'fail:' + p.id, LOCK_SECONDS]]);
-      const left = MAX_FAILS - fails - 1;
-      fail(403, left > 0 ? `Code incorrect. Encore ${left} essai${left > 1 ? 's' : ''}.` : 'Code incorrect. Accès bloqué 15 minutes.');
-    }
-    await cmd('DEL', P + 'fail:' + p.id);
-    await openSession(res, p.id);
-    return { ok: true };
+  if (a === 'login') return loginFor(res, await personByToken(b.token), b.pin);
+
+  // Accès par le lien de groupe : on choisit son prénom, puis on choisit ou tape son code
+  if (a === 'inviteInfo') {
+    await checkInvite(b.invite);
+    const d = await loadAll();
+    return { people: d.people.map((p) => ({ id: p.id, name: p.name, hasPin: !!p.pinHash })) };
+  }
+  if (a === 'inviteSetPin') {
+    await checkInvite(b.invite);
+    const p = await getPerson(b.id);
+    if (!p) fail(404, 'Ce prénom n’est plus sur le Betlehem.');
+    return setPinFor(res, p, b.pin, `${p.name} a déjà choisi son code. Si ce n’est pas toi, préviens l’organisateur.`);
+  }
+  if (a === 'inviteLogin') {
+    await checkInvite(b.invite);
+    const p = await getPerson(b.id);
+    if (!p) fail(404, 'Ce prénom n’est plus sur le Betlehem.');
+    return loginFor(res, p, b.pin);
   }
 
   // Administration (clé secrète, aucune idée visible)
@@ -228,7 +258,13 @@ async function route(req, res, b) {
     checkAdmin(b.key);
     if (a === 'adminList') {
       const d = await loadAll();
-      return { people: d.people.map((p) => ({ id: p.id, name: p.name, token: p.token, hasPin: !!p.pinHash })) };
+      const invite = await cmd('GET', P + 'invite');
+      return { invite, people: d.people.map((p) => ({ id: p.id, name: p.name, token: p.token, hasPin: !!p.pinHash })) };
+    }
+    if (a === 'adminInvite') {
+      const invite = rand(12);
+      await cmd('SET', P + 'invite', invite);
+      return { invite };
     }
     if (a === 'adminAdd') {
       const p = { id: rand(6), name: cleanName(b.name), token: rand(18), createdAt: Date.now() };

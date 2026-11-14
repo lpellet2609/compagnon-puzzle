@@ -52,12 +52,17 @@ function screen(html) { $('#root').innerHTML = `<div class="gate">${html}</div>`
 function showMessage(title, msg) {
   screen(`<h1>Le Betlehem des Anges</h1><h2>${esc(title)}</h2><p class="lead">${esc(msg)}</p>`);
 }
-function showPin(token, h) {
+// Le lien de groupe est gardé sur l'appareil pour pouvoir revenir au choix du prénom.
+const store = {
+  get() { try { return localStorage.getItem('sapinInvite') || ''; } catch { return ''; } },
+  set(v) { try { localStorage.setItem('sapinInvite', v); } catch {} },
+};
+function showPin(h, send, onBack) {
   const choose = !h.hasPin;
   screen(`<h1>Le Betlehem des Anges</h1>
-    <h2>Bonjour ${esc(h.name)} !</h2>
+    <h2>${choose ? `Tu es bien ${esc(h.name)} ?` : `Bonjour ${esc(h.name)} !`}</h2>
     <p class="lead">${choose
-      ? 'Choisis ton code secret à 4 chiffres. Il protège tes surprises si quelqu’un d’autre utilise ton téléphone ou ta tablette. Évite ton année de naissance.'
+      ? 'Choisis ton code secret à 4 chiffres et garde-le pour toi. Il protège tes surprises. Évite ton année de naissance.'
       : 'Tape ton code secret à 4 chiffres.'}</p>
     <form id="pinForm" class="pinform" autocomplete="off">
       <div class="field"><label for="pin1">${choose ? 'Mon code' : 'Code'}</label>
@@ -67,24 +72,49 @@ function showPin(token, h) {
       <p class="warn" id="pinErr" role="alert"></p>
       <button class="btn primary" type="submit">${choose ? 'Choisir ce code' : 'Entrer'}</button>
     </form>
-    <p class="small">${choose
-      ? 'Ce lien est personnel : ne le transfère à personne.'
-      : 'Code oublié ? Demande à l’organisateur de réinitialiser ton lien.'}</p>`);
+    <p class="small">${choose ? 'Retiens-le bien : il te sera demandé sur chaque nouveau téléphone ou ordinateur.' : 'Code oublié ? Demande à l’organisateur de réinitialiser ton accès.'}</p>
+    ${onBack ? '<button class="btn ghost" id="pinBack" type="button">← Ce n’est pas moi</button>' : ''}`);
+  if (onBack) $('#pinBack').addEventListener('click', onBack);
   $('#pinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const p1 = $('#pin1').value.trim();
     const err = $('#pinErr');
     if (choose && p1 !== $('#pin2').value.trim()) { err.textContent = 'Les deux codes ne sont pas identiques.'; return; }
     try {
-      await api(choose ? 'setPin' : 'login', { token, pin: p1 });
+      await send(p1, choose);
       history.replaceState(null, '', location.pathname);
-      await loadApp(h.id);
+      await loadApp();
     } catch (x) { err.textContent = x.message; $('#pin1').value = ''; if ($('#pin2')) $('#pin2').value = ''; $('#pin1').focus(); }
   });
 }
+async function showPicker(invite) {
+  let info;
+  try { info = await api('inviteInfo', { invite }); }
+  catch (e) { showMessage('Lien non reconnu', e.message); return; }
+  screen(`<h1>Le Betlehem des Anges</h1>
+    <h2>Qui es-tu ?</h2>
+    <p class="lead">Touche ton prénom. Le tien, pas celui d’un autre : la première personne qui choisit un code pour un prénom en devient le propriétaire.</p>
+    <div class="picker">${info.people.map((p) => `<button class="pick" type="button" data-pick="${p.id}">${esc(p.name)}</button>`).join('')}</div>`);
+  document.querySelectorAll('[data-pick]').forEach((btn) => btn.addEventListener('click', () => {
+    const h = info.people.find((x) => x.id === btn.dataset.pick);
+    showPin(h, (pin, choose) => api(choose ? 'inviteSetPin' : 'inviteLogin', { invite, id: h.id, pin }), () => showPicker(invite));
+  }));
+}
+function showNoAccess(title) {
+  const invite = store.get();
+  if (invite) { showPicker(invite); return; }
+  showMessage(title, 'Pour entrer dans le Betlehem, ouvre le lien reçu sur WhatsApp.');
+}
 
 async function boot() {
-  const token = new URLSearchParams(location.search).get('t');
+  const q = new URLSearchParams(location.search);
+  const token = q.get('t'), invite = q.get('g');
+  if (invite) {
+    store.set(invite);
+    history.replaceState(null, '', location.pathname);
+    try { S = await api('state'); startApp(); } catch { showPicker(invite); }
+    return;
+  }
   if (token) {
     let h;
     try { h = await api('hello', { token }); }
@@ -93,12 +123,12 @@ async function boot() {
       const st = await api('state');
       if (st.me === h.id) { history.replaceState(null, '', location.pathname); S = st; startApp(); return; }
     } catch {}
-    showPin(token, h);
+    showPin(h, (pin, choose) => api(choose ? 'setPin' : 'login', { token, pin }));
     return;
   }
   try { S = await api('state'); startApp(); }
   catch (e) {
-    if (e.status === 401) showMessage('Bienvenue', 'Pour accéder au Betlehem, ouvre le lien personnel que l’organisateur t’a envoyé.');
+    if (e.status === 401) showNoAccess('Bienvenue');
     else showMessage('Oups', e.message);
   }
 }
@@ -139,7 +169,7 @@ function startApp() {
     </div>`;
   $('#logout').addEventListener('click', async () => {
     try { await api('logout'); } catch {}
-    showMessage('À bientôt', 'Tu es déconnecté de cet appareil. Pour revenir, rouvre ton lien personnel.');
+    S = null; showNoAccess('À bientôt');
   });
   $('#back').addEventListener('click', leaveRoom);
   view = 'facade';
@@ -307,7 +337,7 @@ function render() { if (view === 'room') renderPanel(); else renderScene(); coun
 
 async function refresh() {
   try { S = await api('state'); render(); }
-  catch (e) { if (e.status === 401) showMessage('Session terminée', e.message); }
+  catch (e) { if (e.status === 401) { S = null; showNoAccess('Session terminée'); } }
 }
 async function act(action, data, msg) {
   if (busy) return; busy = true;
