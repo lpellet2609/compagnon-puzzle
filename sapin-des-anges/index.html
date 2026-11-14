@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <title>Le Betlehem des Anges</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 4,28 28,28' fill='%231E5A3C'/%3E%3Ccircle cx='16' cy='17' r='3' fill='%23D2A23A'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -169,7 +169,7 @@ function renderScene() {
   const noel = `<button class="door noel${S.revealed ? '' : ' locked'}" type="button" data-noel="1" style="${leafStyle(NOEL.x, NOEL.y, NOEL.w, NOEL.h)}"
       aria-label="${S.revealed ? 'Porte de la crèche : voir ce que la famille avait imaginé pour toi' : 'Porte de la crèche, fermée jusqu’au 24 décembre au soir'}">
     <span class="inside" aria-hidden="true"></span>
-    <span class="leaf" aria-hidden="true"><span class="plate">✦ 24 ✦</span></span>
+    <span class="leaf" aria-hidden="true"><span class="plate">24</span></span>
   </button>`;
   $('#scene').innerHTML = `<img src="/creche.jpg" alt="Crèche de Noël : l’étoile, les rois mages, Marie, Joseph et l’enfant, les bergers, l’âne, le bœuf et les moutons" width="800" height="1000">${doors}${noel}`;
   $('#chips').innerHTML = S.people.map((p) => `<button class="chip" type="button" data-person="${p.id}">${esc(p.name)}${p.id === S.me ? ' (moi)' : ''}</button>`).join('');

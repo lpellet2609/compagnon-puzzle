@@ -129,6 +129,8 @@ form.add .actions{display:flex;justify-content:flex-end}
 .linkbox{font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all;color:var(--muted)}
 
 /* ---------- Betlehem : façade, fenêtres et entrée en 3D ---------- */
+/* Les volets sont « découpés » dans l'image, comme un vrai calendrier de l'Avent :
+   même image, fin pointillé doré, prénom calligraphié directement sur la scène. */
 .facade,.room{display:flex;flex-direction:column;gap:20px}
 .room{animation:roomIn .5s ease-out}
 @keyframes roomIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
@@ -143,22 +145,24 @@ html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
 .stage.instant .scene{transition:none}
 .scene img{display:block;width:100%;height:auto;border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
 .door{position:absolute;padding:0;margin:0;border:0;background:none;cursor:pointer;perspective:700px;-webkit-tap-highlight-color:transparent}
-.door .inside{position:absolute;inset:0;border-radius:4px;
+.door .inside{position:absolute;inset:0;border-radius:3px;
   background:radial-gradient(circle at 50% 62%,#FFF6D2 0%,#F4C85F 34%,#8A5418 78%,#4A2A0A 100%);box-shadow:inset 0 0 16px rgba(0,0,0,.65)}
-.door .leaf{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;border-radius:4px;
-  background-image:url(/creche.jpg);background-size:var(--bs);background-position:var(--bp);filter:brightness(1.08) saturate(1.05);
-  box-shadow:0 0 0 2px rgba(255,236,190,.9),0 4px 10px rgba(0,0,0,.45);outline:1.5px dashed rgba(60,35,10,.6);outline-offset:-5px;
-  transform-origin:left center;transition:transform .65s cubic-bezier(.3,.7,.3,1);backface-visibility:hidden}
-.door:hover .leaf{transform:rotateY(-16deg)}
+.door .leaf{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;border-radius:3px;
+  background-image:url(/creche.jpg);background-size:var(--bs);background-position:var(--bp);
+  outline:1px dashed rgba(255,228,165,.6);outline-offset:0;box-shadow:0 0 0 1px rgba(20,10,0,.22);
+  transform-origin:left center;transition:transform .65s cubic-bezier(.3,.7,.3,1),outline-color .3s,box-shadow .3s;backface-visibility:hidden}
+.door:hover .leaf{transform:rotateY(-12deg);outline-color:rgba(255,228,165,.95);box-shadow:-3px 0 8px rgba(0,0,0,.35)}
 .door.open .leaf,.door.open:hover .leaf{transform:rotateY(-112deg)}
-.door.mine .leaf{box-shadow:0 0 0 3px #F2C35B,0 0 18px 4px rgba(242,195,91,.75),0 4px 10px rgba(0,0,0,.45)}
-.door:focus-visible{outline:3px solid #F2C35B;outline-offset:3px;border-radius:6px}
-.door .plate{margin-bottom:7%;max-width:94%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  background:#FBF3E1;color:#3B2410;font-family:var(--font-display);font-size:clamp(12px,2.8vw,16px);line-height:1;
-  padding:4px 9px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.45)}
-.door.noel .plate{background:#1B2A55;color:#F6D27A;letter-spacing:.08em}
-.door .badge{position:absolute;top:-8px;right:-8px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:999px;
-  display:grid;place-items:center;background:#B03A35;color:#fff;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.door.mine .leaf{outline:1px solid rgba(246,210,122,.95);box-shadow:0 0 12px 1px rgba(246,210,122,.55)}
+.door:focus-visible{outline:2px solid #F2C35B;outline-offset:3px;border-radius:4px}
+.door .plate{margin-bottom:5%;max-width:96%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:"Cormorant Garamond", Georgia, serif;font-style:italic;font-weight:600;font-size:clamp(14px,3.6vw,20px);line-height:1.1;
+  color:#F8E7B6;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 10px rgba(0,0,0,.6)}
+.door.mine .plate{color:#FFD978}
+.door.noel .plate{position:absolute;top:5%;left:7%;margin:0;font-family:var(--font-display);font-style:normal;font-size:clamp(15px,3.8vw,22px);letter-spacing:.04em;color:#F6D27A}
+.door .badge{position:absolute;top:4px;right:4px;z-index:2;min-width:17px;height:17px;padding:0 4px;border-radius:999px;
+  display:grid;place-items:center;background:rgba(18,12,4,.6);color:#F6D27A;border:1px solid rgba(246,210,122,.6);
+  font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;pointer-events:none}
 .door.shake{animation:doorShake .5s}
 @keyframes doorShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
 .facade .chips{justify-content:center}
