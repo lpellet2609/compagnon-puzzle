@@ -173,8 +173,8 @@ html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
 .pick:hover{border-color:var(--gold);background:var(--gold-soft)}
 
 /* ---------- Objet à deux faces : calendrier de l'Avent / sapin des listes ---------- */
-.flip{position:relative;aspect-ratio:4/5;transform-style:preserve-3d;transform:perspective(1600px) rotateY(0deg);transition:transform .95s cubic-bezier(.45,.05,.2,1)}
-.flip.back{transform:perspective(1600px) rotateY(180deg)}
+.flip{position:relative;aspect-ratio:4/5;transform-style:preserve-3d;transform:perspective(1600px) rotateY(0deg);will-change:transform}
+.stage{touch-action:pan-y}
 .flip.instant{transition:none}
 .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
 .face.tree{transform:rotateY(180deg);overflow:hidden}
@@ -232,4 +232,4 @@ html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
 .dc-nav .btn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#F3EEE2}
 .dc-nav .btn[disabled]{opacity:.3;cursor:default}
 .dc-close{position:fixed;z-index:2;top:calc(12px + env(safe-area-inset-top,0px));right:max(12px, env(safe-area-inset-right, 0px));background:rgba(11,16,32,.6);border-color:rgba(255,255,255,.25);color:#fff}
-@media (prefers-reduced-motion:reduce){.flip{transition:none}.dc-img img,.burst,.door.day.today .leaf{animation:none}}
+@media (prefers-reduced-motion:reduce){.dc-img img,.burst,.door.day.today .leaf{animation:none}}

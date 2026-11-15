@@ -40,11 +40,11 @@ try { key = new URLSearchParams(location.hash.slice(1)).get('k') || sessionStora
 try { if (key) sessionStorage.setItem('sapinKey', key); } catch {}
 let people = [], invite = null;
 const groupLink = () => location.origin + '/?g=' + invite;
-const groupMessage = () => `Bonjour la famille ! 🎄 Voici notre Betlehem des Anges pour les cadeaux de Noël : ${groupLink()}\n\n1. Touche TON prénom (pas celui d’un autre 😉).\n2. Choisis un code secret à 4 chiffres et garde-le pour toi.\n\nÉcris ta lettre aux anges, et glisse en secret des idées pour les autres. Le 24 au soir, la porte de la crèche s’ouvre !`;
+const groupMessage = () => `Bonjour la famille ! 🎄 Voici notre Betlehem des Anges pour les cadeaux de Noël : ${groupLink()}\n\n1. Appuie sur ton prénom.\n2. Choisis un code secret à 4 chiffres et garde-le pour toi.\n\nÉcris ta lettre aux anges, et glisse en secret des idées pour les autres. Le 24 au soir, la porte de la crèche s’ouvre !`;
 function renderGroup() {
   $('#group').innerHTML = invite
     ? `<h3>Lien du groupe WhatsApp</h3>
-       <p class="lead">Un seul lien pour toute la famille : chacun touche son prénom et choisit son code.</p>
+       <p class="lead">Un seul lien pour toute la famille : chacun appuie sur son prénom et choisit son code.</p>
        <p class="linkbox">${esc(groupLink())}</p>
        <div class="inline"><button class="btn primary" id="gMsg" type="button">Copier le message du groupe</button>
          <button class="btn ghost" id="gLink" type="button">Copier le lien seul</button>

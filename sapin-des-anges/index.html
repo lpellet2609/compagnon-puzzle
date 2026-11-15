@@ -28,7 +28,7 @@ const MOIS = 'décembre';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 let view = 'facade', entering = false, side = 'cal', preview = false, DAYS = null, swipeAt = 0;
-try { side = sessionStorage.getItem('sapinSide') || 'cal'; } catch {}
+side = 'cal';
 let S = null, sel = null, openShare = null, busy = false;
 
 function toast(t) {
@@ -94,7 +94,7 @@ async function showPicker(invite) {
   catch (e) { showMessage('Lien non reconnu', e.message); return; }
   screen(`<h1>Le Betlehem des Anges</h1>
     <h2>Qui es-tu ?</h2>
-    <p class="lead">Touche ton prénom. Le tien, pas celui d’un autre : la première personne qui choisit un code pour un prénom en devient le propriétaire.</p>
+    <p class="lead">Appuie sur ton prénom.</p>
     <div class="picker">${info.people.map((p) => `<button class="pick" type="button" data-pick="${p.id}">${esc(p.name)}</button>`).join('')}</div>`);
   document.querySelectorAll('[data-pick]').forEach((btn) => btn.addEventListener('click', () => {
     const h = info.people.find((x) => x.id === btn.dataset.pick);
@@ -144,13 +144,11 @@ async function loadApp() { S = await api('state'); sel = null; startApp(); }
 // ---------- Application ----------
 function startApp() {
   if (!sel || !S.people.some((p) => p.id === sel)) sel = S.me;
-  if (preview) S.calDay = 24;
   $('#root').innerHTML = `
     <div id="facade" class="facade">
       <header class="top">
         <div>
           <h1>Le Betlehem des Anges</h1>
-          <p class="sub" id="sideSub"></p>
         </div>
         <div class="controls">
           <p class="count" id="countdown"></p>
@@ -159,12 +157,11 @@ function startApp() {
       </header>
       ${preview ? '<p class="demo">Mode aperçu : toutes les fenêtres sont ouvertes pour toi, rien n’est enregistré.</p>' : ''}
       <div class="stage" id="stage"><div class="scene" id="scene">
-        <div class="flip${side === 'tree' ? ' back' : ''}" id="flip">
+        <div class="flip" id="flip">
           <div class="face cal" id="faceCal"></div>
           <div class="face tree" id="faceTree"></div>
         </div>
       </div></div>
-      <div class="flipbar"><button class="btn flipbtn" id="flipBtn" type="button"></button></div>
       <div class="chips" id="chips" aria-label="Ouvrir l’espace d’une personne"></div>
       <section class="section" id="legend">
         <h3>Qui voit quoi</h3>
@@ -187,15 +184,15 @@ function startApp() {
     S = null; showNoAccess('À bientôt');
   });
   $('#back').addEventListener('click', leaveRoom);
-  $('#flipBtn').addEventListener('click', () => flipTo(side === 'cal' ? 'tree' : 'cal'));
-  bindSwipe($('#stage'));
+  bindSpin($('#stage'));
   view = 'facade';
-  render();
+  mode = 'spin'; chosen = false; ang = 0;
+  render(); setAng(); startSpin();
 }
 function visible(pid) { return S.ideas.filter((i) => i.forId === pid); }
 function countdown() {
   let html;
-  const d = S.calDay;
+  const d = curDay();
   if (d >= 25) html = '<b>Boldog karácsonyt !</b>';
   else if (d >= 1) html = `<b>${25 - d}</b> jour${25 - d > 1 ? 's' : ''} avant Noël`;
   else { const n = Math.max(1, Math.ceil((Date.UTC(2026, 11, 1) - Date.now()) / 864e5)); html = `Première fenêtre dans <b>${n}</b> jour${n > 1 ? 's' : ''}`; }
@@ -213,9 +210,9 @@ function renderCalendar() {
     const big = n === 24, w = big ? 18 : 14.5, h = big ? 14.4 : 11.6;
     const x = CAL_X[k % 5] + (((n * 37) % 7) - 3) * 0.5, y = CAL_Y[Math.floor(k / 5)] + (((n * 53) % 7) - 3) * 0.4;
     const isOpen = opened.has(n) || (preview && false);
-    const state = n > S.calDay ? 'locked' : n === S.calDay ? 'today' : '';
+    const state = n > curDay() ? 'locked' : n === curDay() ? 'today' : '';
     return `<button class="door day${big ? ' big' : ''}${isOpen ? ' open' : ''}${state ? ' ' + state : ''}" type="button" data-day="${n}" style="${leafStyle(x, y, w, h)}"
-        aria-label="Fenêtre du ${n} ${MOIS}${n > S.calDay ? ', pas encore ouverte' : isOpen ? ', déjà ouverte' : ''}">
+        aria-label="Fenêtre du ${n} ${MOIS}${n > curDay() ? ', pas encore ouverte' : isOpen ? ', déjà ouverte' : ''}">
       <span class="inside" aria-hidden="true" style="background-image:url(/avent/t${pad(n)}.jpg)"></span>
       <span class="leaf" aria-hidden="true"><span class="num">${n}</span></span>
     </button>`;
@@ -234,32 +231,61 @@ function renderTree() {
   $('#faceTree').innerHTML = `<img src="/sapin.jpg" alt="Sapin de Noël décoré de boules rouges et dorées" width="900" height="1186">${balls}`;
 }
 function renderScene() {
-  renderCalendar(); renderTree(); applySide(false);
+  renderCalendar(); renderTree(); updateChrome();
 }
-function applySide(animate = true) {
-  const f = $('#flip'); if (!f) return;
-  if (!animate) f.classList.add('instant');
-  f.classList.toggle('back', side === 'tree');
-  if (!animate) { void f.offsetWidth; f.classList.remove('instant'); }
-  $('#flipBtn').innerHTML = side === 'cal' ? 'Voir les listes de cadeaux <span aria-hidden="true">↻</span>' : 'Voir le calendrier de l’Avent <span aria-hidden="true">↻</span>';
-  $('#sideSub').innerHTML = side === 'cal'
-    ? (S.calDay >= 1 && S.calDay <= 24 ? `Bonjour <strong>${esc(nm(S.me))}</strong>. La fenêtre du <strong>${S.calDay} ${MOIS}</strong> t’attend.` : `Bonjour <strong>${esc(nm(S.me))}</strong>. Chaque jour de décembre, une fenêtre s’ouvre sur le chemin vers Bethléem.`)
-    : `Bonjour <strong>${esc(nm(S.me))}</strong>. Touche ta boule pour écrire ta lettre aux anges, ou celle d’un proche pour lui trouver un cadeau.`;
-  $('#chips').hidden = side !== 'tree'; $('#legend').hidden = side !== 'tree';
+// L'objet tourne seul sur lui-même ; on le fait tourner du doigt ; appuyer sur une face l'arrête sur cette face.
+const SPIN_SPEED = 26;                                   // degrés par seconde (un tour en 14 s)
+let ang = 0, mode = 'spin', target = 0, dragV = 0, spinRaf = 0, lastT = 0, chosen = false;
+const curDay = () => (preview ? 24 : S.calDay);
+const frontVisible = () => Math.cos((ang * Math.PI) / 180) > 0;
+function setAng() { const f = $('#flip'); if (f) f.style.transform = `perspective(1600px) rotateY(${ang}deg)`; }
+function updateChrome() {
+  const showTree = mode === 'frozen' && side === 'tree';
+  $('#chips').hidden = !showTree; $('#legend').hidden = !showTree;
   $('#chips').innerHTML = S.people.map((p) => `<button class="chip" type="button" data-person="${p.id}">${esc(p.name)}${p.id === S.me ? ' (moi)' : ''}</button>`).join('');
 }
-function flipTo(s) {
-  side = s; try { sessionStorage.setItem('sapinSide', s); } catch {}
-  applySide(true);
+function snapTo(s) {
+  side = s; chosen = true;
+  const base = s === 'cal' ? 0 : 180;
+  target = ang + ((((base - ang) % 360) + 540) % 360) - 180;
+  mode = 'snap';
 }
-function bindSwipe(el) {
-  let x0 = null, y0 = 0;
-  el.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
-  el.addEventListener('pointerup', (e) => {
-    if (x0 == null) return; const dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
-    if (Math.abs(dx) > 60 && Math.abs(dy) < 50) { swipeAt = Date.now(); flipTo(side === 'cal' ? 'tree' : 'cal'); }
+function startSpin() {
+  cancelAnimationFrame(spinRaf); lastT = 0;
+  if (reduceMotion()) { mode = 'frozen'; ang = side === 'tree' ? 180 : 0; setAng(); updateChrome(); return; }
+  const loop = (t) => {
+    if (!$('#flip')) return;
+    const dt = Math.min(0.05, (t - (lastT || t)) / 1000); lastT = t;
+    if (mode === 'spin') ang += SPIN_SPEED * dt;
+    else if (mode === 'glide') {
+      ang += dragV; dragV *= 0.93;
+      if (Math.abs(dragV) < 0.25) { if (chosen) snapTo(frontVisible() ? 'cal' : 'tree'); else mode = 'spin'; }
+    } else if (mode === 'snap') {
+      ang += (target - ang) * 0.14;
+      if (Math.abs(target - ang) < 0.3) { ang = target; mode = 'frozen'; updateChrome(); }
+    }
+    setAng();
+    spinRaf = requestAnimationFrame(loop);
+  };
+  spinRaf = requestAnimationFrame(loop);
+}
+function bindSpin(el) {
+  let x0 = null, last = 0, moved = 0, before = 'spin';
+  el.addEventListener('pointerdown', (e) => {
+    if (entering) return;
+    x0 = last = e.clientX; moved = 0; before = mode;
   });
-  el.addEventListener('pointercancel', () => { x0 = null; });
+  el.addEventListener('pointermove', (e) => {
+    if (x0 == null) return;
+    const dx = e.clientX - last; last = e.clientX; moved += Math.abs(dx);
+    if (moved > 8) { if (mode !== 'drag') { mode = 'drag'; updateChrome(); } ang += dx * 0.45; dragV = dx * 0.45; setAng(); }
+  });
+  const end = () => {
+    if (x0 == null) return; x0 = null;
+    if (mode === 'drag') { swipeAt = Date.now(); mode = 'glide'; if (before === 'frozen') chosen = true; }
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
 }
 function originOn(el) {
   const scene = $('#scene'), r = el.getBoundingClientRect(), s = scene.getBoundingClientRect();
@@ -286,7 +312,7 @@ async function enterRoom(pid) {
 async function leaveRoom() {
   view = 'facade';
   $('#room').hidden = true; $('#facade').hidden = false;
-  if (side !== 'tree') { side = 'tree'; }
+  side = 'tree'; mode = 'frozen'; chosen = true; ang = 180; setAng();
   renderScene(); countdown();
   const stage = $('#stage'), ball = document.querySelector(`.ball[data-person="${sel}"]`);
   window.scrollTo(0, Math.max(0, stage.getBoundingClientRect().top + scrollY - 80));
@@ -315,9 +341,9 @@ const BONUS = {
 };
 async function openDay(n, door) {
   if (entering) return;
-  if (n > S.calDay) {
+  if (n > curDay()) {
     door.classList.remove('shake'); void door.offsetWidth; door.classList.add('shake');
-    toast(S.calDay < 1 ? 'Patience : la première fenêtre s’ouvre le 1er décembre.' : `Cette fenêtre s’ouvrira le ${n} ${MOIS}.`);
+    toast(curDay() < 1 ? 'Patience : la première fenêtre s’ouvre le 1er décembre.' : `Cette fenêtre s’ouvrira le ${n} ${MOIS}.`);
     return;
   }
   entering = true;
@@ -353,7 +379,7 @@ function verseText(v) {
 function showDayCard(n, days) {
   const d = days && days.find((x) => x.day === n);
   const el = document.createElement('div'); el.className = 'daycard'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
-  const unlocked = (k) => k >= 1 && k <= Math.min(24, S.calDay);
+  const unlocked = (k) => k >= 1 && k <= Math.min(24, curDay());
   el.innerHTML = d ? `
     <button class="btn dc-close" type="button" data-dc="close" aria-label="Fermer">✕</button>
     <div class="dc-img"><img src="/${d.img}" alt="${esc(d.artwork)}, ${esc(d.artist)}"></div>
@@ -485,6 +511,10 @@ async function act(action, data, msg) {
 
 document.addEventListener('click', (e) => {
   if (!S) return;
+  if (view === 'facade' && e.target.closest('#stage') && mode !== 'frozen') {
+    if (Date.now() - swipeAt > 400 && (mode === 'spin' || mode === 'glide')) snapTo(frontVisible() ? 'cal' : 'tree');
+    return;
+  }
   const o = e.target.closest('[data-person]');
   if (o) { if (Date.now() - swipeAt > 400) enterRoom(o.dataset.person); return; }
   const dd = e.target.closest('[data-day]');
