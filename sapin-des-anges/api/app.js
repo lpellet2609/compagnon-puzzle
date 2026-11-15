@@ -103,7 +103,10 @@ async function loadAll() {
   const cr = await pipe(ideas.map((i) => ['HGETALL', P + 'contrib:' + i.id]));
   const contribs = {};
   ideas.forEach((i, k) => { contribs[i.id] = nums(toObj(cr[k])); });
-  return { people, ideas, full: toObj(ff), buyer: toObj(bb), contribs };
+  const op = await pipe(people.map((p) => ['SMEMBERS', P + 'opened:' + p.id]));
+  const opened = {};
+  people.forEach((p, k) => { opened[p.id] = (op[k] || []).map(Number).sort((a, b) => a - b); });
+  return { people, ideas, full: toObj(ff), buyer: toObj(bb), contribs, opened };
 }
 async function getIdea(id) {
   const s = typeof id === 'string' && id.length < 40 && (await cmd('HGET', P + 'ideas', id));
@@ -130,9 +133,9 @@ function viewFor(me, d) {
   for (const i of d.ideas) {
     const base = { id: i.id, forId: i.forId, byId: i.byId, title: i.title, price: i.price, link: i.link, prio: i.prio };
     if (i.forId === me) {
-      // Pour moi : mes vœux, sans aucune info de réservation. Les idées secrètes seulement après le 24 au soir.
+      // Pour moi : mes vœux seulement, sans aucune info de réservation. Les idées secrètes restent secrètes.
       if (i.removed) continue;
-      if (i.byId === me || revealed) ideas.push(base);
+      if (i.byId === me) ideas.push(base);
       continue;
     }
     const c = d.contribs[i.id] || {};
@@ -155,7 +158,18 @@ function viewFor(me, d) {
     ideas,
     revealed,
     revealAt: REVEAL_AT,
+    calDay: calendarDay(),
+    opened: (d.opened && d.opened[me]) || [],
   };
+}
+// Jour du calendrier de l'Avent à Paris : 0 avant le 1er décembre, 1 à 24 en décembre, 25 ensuite.
+function calendarDay() {
+  if (process.env.CAL_DAY) return Math.max(0, Math.min(25, Number(process.env.CAL_DAY) || 0));
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date()).split('-').map(Number);
+  if (y < 2026 || (y === 2026 && m < 12)) return 0;
+  if (y === 2026 && m === 12) return Math.min(d, 25);
+  return 25;
 }
 
 function cleanIdeaInput(b, forSelf) {
@@ -297,7 +311,7 @@ async function route(req, res, b) {
           }
         }
       }
-      cmds.push(['HDEL', P + 'people', p.id], ['DEL', P + 'token:' + p.token], ['DEL', P + 'fail:' + p.id]);
+      cmds.push(['HDEL', P + 'people', p.id], ['DEL', P + 'token:' + p.token], ['DEL', P + 'fail:' + p.id], ['DEL', P + 'opened:' + p.id]);
       await pipe(cmds);
       await killSessions(p.id);
       return { ok: true };
@@ -313,6 +327,13 @@ async function route(req, res, b) {
   if (a === 'logout') {
     await pipe([['DEL', P + 'session:' + sid], ['SREM', P + 'sessions:' + mine, sid]]);
     setCookie(res, '', 0);
+    return { ok: true };
+  }
+  if (a === 'openDay') {
+    const n = Math.round(Number(b.day));
+    if (!(n >= 1 && n <= 24)) fail(400, 'Jour inconnu.');
+    if (n > calendarDay()) fail(403, `Cette fenêtre s’ouvrira le ${n} décembre.`);
+    await cmd('SADD', P + 'opened:' + mine, n);
     return { ok: true };
   }
   if (a === 'addIdea') {

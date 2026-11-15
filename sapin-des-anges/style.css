@@ -171,3 +171,65 @@ html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
 .pick{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:14px 10px;cursor:pointer;
   font-family:"Cormorant Garamond", Georgia, serif;font-style:italic;font-weight:600;font-size:22px;color:var(--ink)}
 .pick:hover{border-color:var(--gold);background:var(--gold-soft)}
+
+/* ---------- Objet à deux faces : calendrier de l'Avent / sapin des listes ---------- */
+.flip{position:relative;aspect-ratio:4/5;transform-style:preserve-3d;transform:perspective(1600px) rotateY(0deg);transition:transform .95s cubic-bezier(.45,.05,.2,1)}
+.flip.back{transform:perspective(1600px) rotateY(180deg)}
+.flip.instant{transition:none}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
+.face.tree{transform:rotateY(180deg);overflow:hidden}
+.face>img{display:block;width:100%;height:100%;object-fit:cover;border-radius:14px;box-shadow:none}
+.flipbar{display:flex;justify-content:center;margin-top:-6px}
+.flipbtn{display:inline-flex;gap:8px;align-items:center}
+.flipbtn span{font-size:18px;line-height:1}
+.demo{font-size:13px;color:var(--muted);border:1px dashed var(--line);border-radius:8px;padding:8px 12px}
+
+/* Fenêtres du calendrier */
+.door.day .num{position:absolute;top:6%;left:9%;font-family:var(--font-display);font-size:clamp(15px,3.9vw,24px);line-height:1;color:#F8E7B6;
+  text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 10px rgba(0,0,0,.6)}
+.door.day.big .num{font-size:clamp(20px,5vw,32px);color:#F6D27A}
+.door.day .inside{background-size:cover;background-position:center;box-shadow:inset 0 0 12px rgba(0,0,0,.55)}
+.door.day.today .leaf{outline:1.5px solid rgba(246,210,122,.95);animation:todayGlow 2.2s ease-in-out infinite}
+@keyframes todayGlow{0%,100%{box-shadow:0 0 6px 1px rgba(246,210,122,.45)}50%{box-shadow:0 0 22px 6px rgba(246,210,122,.85)}}
+.door.day.open .leaf{transform:rotateY(-112deg)}
+.burst{position:absolute;left:50%;top:50%;width:260%;aspect-ratio:1;transform:translate(-50%,-50%) scale(.2);border-radius:50%;pointer-events:none;z-index:3;
+  background:radial-gradient(circle,rgba(255,246,210,.95) 0%,rgba(246,200,95,.6) 30%,rgba(246,200,95,0) 65%),
+    repeating-conic-gradient(from 0deg,rgba(255,236,170,.55) 0deg 6deg,rgba(255,236,170,0) 6deg 24deg);
+  -webkit-mask:radial-gradient(circle,#000 35%,transparent 70%);mask:radial-gradient(circle,#000 35%,transparent 70%);animation:burst 1.5s ease-out forwards}
+@keyframes burst{0%{opacity:0;transform:translate(-50%,-50%) scale(.2) rotate(0)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.4) rotate(40deg)}}
+
+/* Boules du sapin */
+.ball{position:absolute;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;padding:0;border:0;background:transparent;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:transform .5s cubic-bezier(.3,1.4,.4,1),box-shadow .3s}
+.ball::before{content:"";position:absolute;inset:-3px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,236,190,.55);transition:box-shadow .3s}
+.ball:hover::before{box-shadow:0 0 0 2px rgba(255,236,190,.9),0 0 18px 4px rgba(255,220,140,.6)}
+.ball.mine::before{box-shadow:0 0 0 2px #F2C35B,0 0 16px 4px rgba(242,195,91,.7)}
+.ball.open{transform:translate(-50%,-50%) scale(1.25) rotate(25deg);box-shadow:0 0 30px 12px rgba(255,226,150,.85)}
+.ball:focus-visible{outline:2px solid #F2C35B;outline-offset:4px}
+.ball .tag{position:absolute;left:50%;top:calc(100% + 2px);transform:translateX(-50%);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+  background:#FBF3E1;color:#3B2410;font-family:"Cormorant Garamond", Georgia, serif;font-style:italic;font-weight:600;font-size:clamp(12px,3.2vw,16px);line-height:1;
+  padding:3px 8px 4px;border-radius:3px 10px 10px 3px;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.ball .tag::before{content:"";position:absolute;left:50%;top:-7px;width:1px;height:7px;background:rgba(251,243,225,.9)}
+.ball .tag i{font-style:normal;font-family:var(--font-body);font-size:10px;font-weight:700;background:#B03A35;color:#fff;border-radius:999px;padding:1px 5px}
+
+/* Carte du jour */
+.daycard{position:fixed;inset:0;z-index:60;overflow-y:auto;background:#0B1020;color:#F3EEE2;animation:dcIn .5s ease-out;
+  padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+@keyframes dcIn{from{opacity:0}}
+.dc-img{position:relative;height:min(58vh,560px);overflow:hidden}
+.dc-img img{width:100%;height:100%;object-fit:cover;animation:kenburns 24s ease-in-out infinite alternate}
+@keyframes kenburns{from{transform:scale(1.02) translate(0,0)}to{transform:scale(1.16) translate(-3%,-2%)}}
+.dc-img::after{content:"";position:absolute;inset:auto 0 0;height:40%;background:linear-gradient(rgba(11,16,32,0),#0B1020)}
+.dc-body{max-width:640px;margin:-40px auto 0;position:relative;display:flex;flex-direction:column;gap:12px;
+  padding-left:max(20px, env(safe-area-inset-left, 0px));padding-right:max(20px, env(safe-area-inset-right, 0px))}
+.dc-day{font-family:"Cormorant Garamond", Georgia, serif;font-style:italic;font-weight:600;font-size:22px;color:#F2C35B;margin:0}
+.dc-body h2{font-size:clamp(28px,7vw,40px);color:#F3EEE2}
+.dc-body blockquote{margin:0;font-family:"Cormorant Garamond", Georgia, serif;font-style:italic;font-weight:500;font-size:clamp(21px,5.2vw,26px);line-height:1.35;color:#F8EFD8}
+.dc-ref{margin:0;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#C9A55A}
+.dc-bonus{margin:4px 0 0;font-size:14px;line-height:1.5;color:#E9E2CF;border-left:2px solid #F2C35B;padding-left:12px}
+.dc-credit{margin:6px 0 0;font-size:12px;color:#9C99A8}
+.dc-nav{display:flex;justify-content:space-between;margin-top:10px}
+.dc-nav .btn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#F3EEE2}
+.dc-nav .btn[disabled]{opacity:.3;cursor:default}
+.dc-close{position:fixed;z-index:2;top:calc(12px + env(safe-area-inset-top,0px));right:max(12px, env(safe-area-inset-right, 0px));background:rgba(11,16,32,.6);border-color:rgba(255,255,255,.25);color:#fff}
+@media (prefers-reduced-motion:reduce){.flip{transition:none}.dc-img img,.burst,.door.day.today .leaf{animation:none}}

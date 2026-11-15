@@ -27,6 +27,7 @@
       <button class="btn primary" type="submit">Ajouter</button>
     </div>
     <p class="small">Pense à t’ajouter toi aussi : tu utiliseras ton propre lien comme les autres.</p>
+    <p class="small"><a id="apercu" href="#">Prévisualiser les 24 fenêtres du calendrier</a> (sur cet appareil, connecté avec ton propre accès ; rien n’est enregistré).</p>
   </form>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -106,6 +107,7 @@ $('#addForm').addEventListener('submit', async (e) => {
   try { await api('adminAdd', { name: n }); $('#newName').value = ''; toast(n + ' ajouté.'); } catch (x) { toast(x.message); }
   load();
 });
+$('#apercu').href = '/?apercu=' + encodeURIComponent(key);
 load();
 </script>
 </body>

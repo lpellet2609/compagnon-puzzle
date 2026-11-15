@@ -17,17 +17,18 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const eur = (n) => Number(n).toLocaleString('fr-FR') + ' €';
-// Fenêtres posées sur la crèche : centre (x, y) et taille en % de l'image (800×1000).
-// Le coin bas-droit (signature de l'illustration) reste toujours visible.
-const DOORS = [
-  { x: 31, y: 12 }, { x: 14, y: 44 }, { x: 38, y: 41 }, { x: 82, y: 44 },
-  { x: 72, y: 16 }, { x: 18, y: 75 }, { x: 76, y: 79 },
-];
-const DW = 19, DH = 15;
-const NOEL = { x: 51, y: 63, w: 22, h: 16 };
+// Face « Listes » : 7 boules du sapin (centre x, y et rayon en px sur l'image 900 × 1186)
+const BALLS = [[300, 520, 42], [569, 495, 29], [637, 630, 27], [350, 672, 28], [520, 763, 40], [248, 898, 28], [211, 1023, 37]];
+const TREE_W = 900, TREE_H = 1186, FACE_RATIO = 1.25;           // l'objet a le format de la crèche (4:5)
+const TREE_CROP = (TREE_H / TREE_W - FACE_RATIO) / 2;            // part rognée en haut et en bas
+// Face « Calendrier » : 24 fenêtres sur la crèche, grille 5 × 5 ; la 24 sur la mangeoire, la case vide sur la signature
+const CAL_X = [12, 31, 50, 69, 88], CAL_Y = [10, 27, 44, 61, 78];
+const CAL_ORDER = [7, 15, 3, 20, 11, 22, 1, 18, 9, 5, 13, 19, 2, 16, 4, 10, 21, 24, 8, 23, 17, 6, 12, 14, 0];
+const MOIS = 'décembre';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-let view = 'facade', entering = false;
+let view = 'facade', entering = false, side = 'cal', preview = false, DAYS = null, swipeAt = 0;
+try { side = sessionStorage.getItem('sapinSide') || 'cal'; } catch {}
 let S = null, sel = null, openShare = null, busy = false;
 
 function toast(t) {
@@ -109,6 +110,12 @@ function showNoAccess(title) {
 async function boot() {
   const q = new URLSearchParams(location.search);
   const token = q.get('t'), invite = q.get('g');
+  // Aperçu réservé à l'organisateur : toutes les fenêtres ouvrables, rien n'est enregistré
+  const ap = q.get('apercu');
+  if (ap) {
+    try { await api('adminList', { key: ap }); preview = true; try { sessionStorage.setItem('sapinApercu', '1'); } catch {} } catch {}
+    history.replaceState(null, '', location.pathname);
+  } else { try { preview = sessionStorage.getItem('sapinApercu') === '1'; } catch {} }
   if (invite) {
     store.set(invite);
     history.replaceState(null, '', location.pathname);
@@ -137,32 +144,40 @@ async function loadApp() { S = await api('state'); sel = null; startApp(); }
 // ---------- Application ----------
 function startApp() {
   if (!sel || !S.people.some((p) => p.id === sel)) sel = S.me;
+  if (preview) S.calDay = 24;
   $('#root').innerHTML = `
     <div id="facade" class="facade">
       <header class="top">
         <div>
           <h1>Le Betlehem des Anges</h1>
-          <p class="sub">Bonjour <strong>${esc(nm(S.me))}</strong>. Ouvre ta fenêtre pour écrire ta lettre aux anges, ou celle d’un proche pour lui trouver un cadeau.</p>
+          <p class="sub" id="sideSub"></p>
         </div>
         <div class="controls">
           <p class="count" id="countdown"></p>
           <button class="btn ghost" id="logout" type="button">Ce n’est pas moi</button>
         </div>
       </header>
-      <div class="stage" id="stage"><div class="scene" id="scene"></div></div>
-      <div class="chips" id="chips" aria-label="Ouvrir une fenêtre"></div>
-      <section class="section">
+      ${preview ? '<p class="demo">Mode aperçu : toutes les fenêtres sont ouvertes pour toi, rien n’est enregistré.</p>' : ''}
+      <div class="stage" id="stage"><div class="scene" id="scene">
+        <div class="flip${side === 'tree' ? ' back' : ''}" id="flip">
+          <div class="face cal" id="faceCal"></div>
+          <div class="face tree" id="faceTree"></div>
+        </div>
+      </div></div>
+      <div class="flipbar"><button class="btn flipbtn" id="flipBtn" type="button"></button></div>
+      <div class="chips" id="chips" aria-label="Ouvrir l’espace d’une personne"></div>
+      <section class="section" id="legend">
         <h3>Qui voit quoi</h3>
         <div class="legend">
           <div><b>Mes vœux</b>Visibles par toute la famille.</div>
-          <div><b>Idées secrètes pour moi</b>Visibles par les autres, cachées pour moi jusqu’au 24 au soir, quand la porte de la crèche s’ouvre.</div>
+          <div><b>Idées secrètes pour moi</b>Visibles par les autres, jamais par moi.</div>
           <div><b>Réservations et cagnottes</b>Jamais visibles par la personne qui reçoit. Les autres voient le total et le reste à financer ; seul l’acheteur voit qui a mis combien.</div>
         </div>
       </section>
     </div>
     <div id="room" class="room" hidden>
       <div class="roombar">
-        <button class="btn" id="back" type="button">← Retour au Betlehem</button>
+        <button class="btn" id="back" type="button">← Retour au sapin</button>
         <p class="count" id="countdown2"></p>
       </div>
       <main class="panel" id="panel"></main>
@@ -172,47 +187,92 @@ function startApp() {
     S = null; showNoAccess('À bientôt');
   });
   $('#back').addEventListener('click', leaveRoom);
+  $('#flipBtn').addEventListener('click', () => flipTo(side === 'cal' ? 'tree' : 'cal'));
+  bindSwipe($('#stage'));
   view = 'facade';
   render();
 }
 function visible(pid) { return S.ideas.filter((i) => i.forId === pid); }
 function countdown() {
   let html;
-  if (S.revealed) html = '<b>Szenteste</b> · Boldog karácsonyt !';
-  else { const d = Math.max(0, Math.ceil((S.revealAt - Date.now()) / 864e5)); html = `<b>${d}</b> jour${d > 1 ? 's' : ''} avant Szenteste`; }
+  const d = S.calDay;
+  if (d >= 25) html = '<b>Boldog karácsonyt !</b>';
+  else if (d >= 1) html = `<b>${25 - d}</b> jour${25 - d > 1 ? 's' : ''} avant Noël`;
+  else { const n = Math.max(1, Math.ceil((Date.UTC(2026, 11, 1) - Date.now()) / 864e5)); html = `Première fenêtre dans <b>${n}</b> jour${n > 1 ? 's' : ''}`; }
   for (const id of ['#countdown', '#countdown2']) { const el = $(id); if (el) el.innerHTML = html; }
 }
 function leafStyle(x, y, w, h) {
   const l = x - w / 2, t = y - h / 2;
   return `left:${l}%;top:${t}%;width:${w}%;height:${h}%;--bs:${(100 / w) * 100}% ${(100 / h) * 100}%;--bp:${(l / (100 - w)) * 100}% ${(t / (100 - h)) * 100}%`;
 }
-function renderScene() {
-  const doors = S.people.slice(0, DOORS.length).map((p, k) => {
-    const { x, y } = DOORS[k]; const n = visible(p.id).length; const mine = p.id === S.me;
-    return `<button class="door${mine ? ' mine' : ''}" type="button" data-person="${p.id}" style="${leafStyle(x, y, DW, DH)}"
-        aria-label="Fenêtre de ${esc(p.name)}${mine ? ' (toi)' : ''}, ${n} idée${n > 1 ? 's' : ''}">
-      <span class="inside" aria-hidden="true"></span>
-      <span class="leaf" aria-hidden="true"><span class="plate">${esc(p.name)}</span></span>
-      ${n ? `<span class="badge" aria-hidden="true">${n}</span>` : ''}
+const pad = (n) => String(n).padStart(2, '0');
+function renderCalendar() {
+  const opened = new Set(S.opened || []);
+  const doors = CAL_ORDER.map((n, k) => {
+    if (!n) return '';
+    const big = n === 24, w = big ? 18 : 14.5, h = big ? 14.4 : 11.6;
+    const x = CAL_X[k % 5] + (((n * 37) % 7) - 3) * 0.5, y = CAL_Y[Math.floor(k / 5)] + (((n * 53) % 7) - 3) * 0.4;
+    const isOpen = opened.has(n) || (preview && false);
+    const state = n > S.calDay ? 'locked' : n === S.calDay ? 'today' : '';
+    return `<button class="door day${big ? ' big' : ''}${isOpen ? ' open' : ''}${state ? ' ' + state : ''}" type="button" data-day="${n}" style="${leafStyle(x, y, w, h)}"
+        aria-label="Fenêtre du ${n} ${MOIS}${n > S.calDay ? ', pas encore ouverte' : isOpen ? ', déjà ouverte' : ''}">
+      <span class="inside" aria-hidden="true" style="background-image:url(/avent/t${pad(n)}.jpg)"></span>
+      <span class="leaf" aria-hidden="true"><span class="num">${n}</span></span>
     </button>`;
   }).join('');
-  const noel = `<button class="door noel${S.revealed ? '' : ' locked'}" type="button" data-noel="1" style="${leafStyle(NOEL.x, NOEL.y, NOEL.w, NOEL.h)}"
-      aria-label="${S.revealed ? 'Porte de la crèche : voir ce que la famille avait imaginé pour toi' : 'Porte de la crèche, fermée jusqu’au 24 décembre au soir'}">
-    <span class="inside" aria-hidden="true"></span>
-    <span class="leaf" aria-hidden="true"><span class="plate">24</span></span>
-  </button>`;
-  $('#scene').innerHTML = `<img src="/creche.jpg" alt="Crèche de Noël : l’étoile, les rois mages, Marie, Joseph et l’enfant, les bergers, l’âne, le bœuf et les moutons" width="800" height="1000">${doors}${noel}`;
+  $('#faceCal').innerHTML = `<img src="/creche.jpg" alt="Crèche de Noël avec 24 fenêtres de l’Avent" width="800" height="1000">${doors}`;
+}
+function renderTree() {
+  const balls = S.people.slice(0, BALLS.length).map((p, k) => {
+    const [bx, by, br] = BALLS[k]; const n = visible(p.id).length; const mine = p.id === S.me;
+    const x = (bx / TREE_W) * 100, y = ((by / TREE_W - TREE_CROP) / FACE_RATIO) * 100, d = ((br * 2) / TREE_W) * 100;
+    return `<button class="ball${mine ? ' mine' : ''}" type="button" data-person="${p.id}" style="left:${x}%;top:${y}%;width:${d}%"
+        aria-label="Boule de ${esc(p.name)}${mine ? ' (toi)' : ''}, ${n} idée${n > 1 ? 's' : ''}">
+      <span class="tag">${esc(p.name)}${n ? `<i>${n}</i>` : ''}</span>
+    </button>`;
+  }).join('');
+  $('#faceTree').innerHTML = `<img src="/sapin.jpg" alt="Sapin de Noël décoré de boules rouges et dorées" width="900" height="1186">${balls}`;
+}
+function renderScene() {
+  renderCalendar(); renderTree(); applySide(false);
+}
+function applySide(animate = true) {
+  const f = $('#flip'); if (!f) return;
+  if (!animate) f.classList.add('instant');
+  f.classList.toggle('back', side === 'tree');
+  if (!animate) { void f.offsetWidth; f.classList.remove('instant'); }
+  $('#flipBtn').innerHTML = side === 'cal' ? 'Voir les listes de cadeaux <span aria-hidden="true">↻</span>' : 'Voir le calendrier de l’Avent <span aria-hidden="true">↻</span>';
+  $('#sideSub').innerHTML = side === 'cal'
+    ? (S.calDay >= 1 && S.calDay <= 24 ? `Bonjour <strong>${esc(nm(S.me))}</strong>. La fenêtre du <strong>${S.calDay} ${MOIS}</strong> t’attend.` : `Bonjour <strong>${esc(nm(S.me))}</strong>. Chaque jour de décembre, une fenêtre s’ouvre sur le chemin vers Bethléem.`)
+    : `Bonjour <strong>${esc(nm(S.me))}</strong>. Touche ta boule pour écrire ta lettre aux anges, ou celle d’un proche pour lui trouver un cadeau.`;
+  $('#chips').hidden = side !== 'tree'; $('#legend').hidden = side !== 'tree';
   $('#chips').innerHTML = S.people.map((p) => `<button class="chip" type="button" data-person="${p.id}">${esc(p.name)}${p.id === S.me ? ' (moi)' : ''}</button>`).join('');
+}
+function flipTo(s) {
+  side = s; try { sessionStorage.setItem('sapinSide', s); } catch {}
+  applySide(true);
+}
+function bindSwipe(el) {
+  let x0 = null, y0 = 0;
+  el.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
+  el.addEventListener('pointerup', (e) => {
+    if (x0 == null) return; const dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 50) { swipeAt = Date.now(); flipTo(side === 'cal' ? 'tree' : 'cal'); }
+  });
+  el.addEventListener('pointercancel', () => { x0 = null; });
+}
+function originOn(el) {
+  const scene = $('#scene'), r = el.getBoundingClientRect(), s = scene.getBoundingClientRect();
+  scene.style.transformOrigin = `${((r.left + r.width / 2 - s.left) / s.width) * 100}% ${((r.top + r.height / 2 - s.top) / s.height) * 100}%`;
 }
 async function enterRoom(pid) {
   if (entering) return; entering = true;
   sel = pid; openShare = null;
-  const door = document.querySelector(`.door[data-person="${pid}"]`) || (pid === S.me && S.revealed ? $('.door.noel') : null);
-  if (door && !reduceMotion()) {
-    door.classList.add('open');
-    await wait(650);
-    const scene = $('#scene'), r = door.getBoundingClientRect(), s = scene.getBoundingClientRect();
-    scene.style.transformOrigin = `${((r.left + r.width / 2 - s.left) / s.width) * 100}% ${((r.top + r.height / 2 - s.top) / s.height) * 100}%`;
+  const ball = side === 'tree' ? document.querySelector(`.ball[data-person="${pid}"]`) : null;
+  if (ball && !reduceMotion()) {
+    ball.classList.add('open');
+    await wait(550);
+    originOn(ball);
     document.documentElement.classList.add('zooming');
     $('#stage').classList.add('zoom');
     await wait(850);
@@ -226,22 +286,93 @@ async function enterRoom(pid) {
 async function leaveRoom() {
   view = 'facade';
   $('#room').hidden = true; $('#facade').hidden = false;
+  if (side !== 'tree') { side = 'tree'; }
   renderScene(); countdown();
-  const stage = $('#stage'), door = document.querySelector(`.door[data-person="${sel}"]`) || $('.door.noel');
-  const target = stage.getBoundingClientRect().top + scrollY - 80;
-  window.scrollTo(0, Math.max(0, target));
-  if (reduceMotion() || !door) return;
-  const scene = $('#scene'), r = door.getBoundingClientRect(), s = scene.getBoundingClientRect();
-  scene.style.transformOrigin = `${((r.left + r.width / 2 - s.left) / s.width) * 100}% ${((r.top + r.height / 2 - s.top) / s.height) * 100}%`;
+  const stage = $('#stage'), ball = document.querySelector(`.ball[data-person="${sel}"]`);
+  window.scrollTo(0, Math.max(0, stage.getBoundingClientRect().top + scrollY - 80));
+  if (reduceMotion() || !ball) return;
+  originOn(ball);
   document.documentElement.classList.add('noscroll');
-  door.classList.add('open');
+  ball.classList.add('open');
   stage.classList.add('zoom', 'instant');
   stage.offsetWidth; // force la position zoomée avant de reculer
   stage.classList.remove('instant');
   requestAnimationFrame(() => stage.classList.remove('zoom'));
   await wait(850);
-  door.classList.remove('open');
+  ball.classList.remove('open');
   document.documentElement.classList.remove('noscroll');
+}
+
+// ---------- Calendrier de l'Avent : ouvrir la fenêtre du jour ----------
+async function loadDays() {
+  if (DAYS) return DAYS;
+  const r = await fetch('/avent/days.json'); if (!r.ok) throw new Error('Contenu indisponible.');
+  DAYS = await r.json(); return DAYS;
+}
+const BONUS = {
+  6: 'En Hongrie, c’est Mikulás : cette nuit, il a rempli de friandises les bottes bien cirées posées à la fenêtre.',
+  13: 'En Hongrie, c’est Luca napja : on sème du blé dans une coupelle pour qu’il soit vert à Noël, et l’on commence la chaise de Luca, à terminer pour le 24.',
+};
+async function openDay(n, door) {
+  if (entering) return;
+  if (n > S.calDay) {
+    door.classList.remove('shake'); void door.offsetWidth; door.classList.add('shake');
+    toast(S.calDay < 1 ? 'Patience : la première fenêtre s’ouvre le 1er décembre.' : `Cette fenêtre s’ouvrira le ${n} ${MOIS}.`);
+    return;
+  }
+  entering = true;
+  const daysP = loadDays().catch(() => null);
+  if (!reduceMotion()) {
+    const first = !door.classList.contains('open');
+    door.classList.add('open');
+    if (first) { const b = document.createElement('span'); b.className = 'burst'; door.appendChild(b); setTimeout(() => b.remove(), 1600); }
+    await wait(first ? 900 : 300);
+    originOn(door);
+    document.documentElement.classList.add('zooming');
+    $('#stage').classList.add('zoom');
+    await wait(850);
+  } else door.classList.add('open');
+  const days = await daysP;
+  showDayCard(n, days);
+  $('#stage').classList.add('instant'); $('#stage').classList.remove('zoom'); void $('#stage').offsetWidth; $('#stage').classList.remove('instant');
+  document.documentElement.classList.remove('zooming');
+  entering = false;
+  if (!preview && !(S.opened || []).includes(n)) {
+    S.opened = [...(S.opened || []), n];
+    api('openDay', { day: n }).catch(() => {});
+  }
+}
+function showDayCard(n, days) {
+  const d = days && days.find((x) => x.day === n);
+  const el = document.createElement('div'); el.className = 'daycard'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  const unlocked = (k) => k >= 1 && k <= Math.min(24, S.calDay);
+  el.innerHTML = d ? `
+    <button class="btn dc-close" type="button" data-dc="close" aria-label="Fermer">✕</button>
+    <div class="dc-img"><img src="/${d.img}" alt="${esc(d.artwork)}, ${esc(d.artist)}"></div>
+    <div class="dc-body">
+      <p class="dc-day">${n} ${MOIS}</p>
+      <h2>${esc(d.title)}</h2>
+      <blockquote>« ${esc(d.verse)} »</blockquote>
+      <p class="dc-ref">${esc(d.ref.replace(':', ', '))}</p>
+      ${BONUS[n] ? `<p class="dc-bonus">${esc(BONUS[n])}</p>` : ''}
+      ${n === 24 ? `<p class="dc-bonus">${S.revealed ? 'La porte des souvenirs est ouverte : retrouve toutes les photos de la famille.' : 'Ce soir à 18 h, la porte des souvenirs s’ouvrira sur les photos de la famille.'}</p>` : ''}
+      <p class="dc-credit">${esc(d.artist)}, <i>${esc(d.artwork)}</i>${d.year ? ', ' + esc(d.year) : ''}</p>
+      <div class="dc-nav">
+        <button class="btn" type="button" data-dc="prev" ${unlocked(n - 1) ? '' : 'disabled'}>‹ ${n - 1 >= 1 ? n - 1 : ''}</button>
+        <button class="btn" type="button" data-dc="next" ${unlocked(n + 1) ? '' : 'disabled'}>${n + 1 <= 24 ? n + 1 : ''} ›</button>
+      </div>
+    </div>`
+    : `<button class="btn dc-close" type="button" data-dc="close" aria-label="Fermer">✕</button><div class="dc-body"><p class="dc-day">${n} ${MOIS}</p><h2>Contenu en préparation</h2><p class="lead">Reviens un peu plus tard.</p></div>`;
+  document.body.appendChild(el);
+  document.documentElement.classList.add('noscroll');
+  el.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-dc]'); if (!a) return;
+    if (a.dataset.dc === 'close') { el.remove(); document.documentElement.classList.remove('noscroll'); renderCalendar(); return; }
+    const k = n + (a.dataset.dc === 'next' ? 1 : -1);
+    if (!unlocked(k)) return;
+    el.remove(); showDayCard(k, days);
+    if (!preview && !(S.opened || []).includes(k)) { S.opened = [...(S.opened || []), k]; api('openDay', { day: k }).catch(() => {}); }
+  });
 }
 const stars = (n) => n ? '★'.repeat(n) + '<span style="opacity:.3">' + '★'.repeat(3 - n) + '</span>' : '';
 function metaLine(i, secretLabel) {
@@ -314,10 +445,8 @@ function renderPanel() {
       ? 'Tes vœux pour le 24 au soir. Toute la famille les voit. Tu ne vois pas ce qui est réservé, ni les idées que les autres ont glissées pour toi.'
       : `Les vœux de ${esc(name)} et les idées glissées en secret par la famille. ${esc(name)} ne voit ni les idées secrètes, ni les réservations, ni les cagnottes.`}</p></div>`;
   if (own) {
-    const mine = list.filter((i) => i.byId === S.me), secrets = list.filter((i) => i.byId !== S.me);
-    if (S.revealed) html += `<div class="reveal"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6zm-2 15a2 2 0 0 0 4 0" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round"/></svg><p><strong>La clochette a sonné.</strong> Les anges sont passés : voici les idées que la famille avait imaginées pour toi.</p></div>`;
+    const mine = list.filter((i) => i.byId === S.me);
     html += `<div class="section"><h3>Mes vœux</h3><div class="list">${mine.length ? mine.map(cardMine).join('') : '<p class="empty">Ta lettre est encore vide. Ajoute ton premier vœu ci-dessous.</p>'}</div></div>`;
-    if (S.revealed) html += `<div class="section"><h3>Ce que la famille avait imaginé</h3><div class="list">${secrets.length ? secrets.map(cardMine).join('') : '<p class="empty">Aucune idée secrète cette année.</p>'}</div></div>`;
   } else {
     const wishes = list.filter((i) => i.byId === sel), secrets = list.filter((i) => i.byId !== sel);
     html += `<div class="section"><h3>Ses vœux</h3><div class="list">${wishes.length ? wishes.map(cardOther).join('') : `<p class="empty">${esc(name)} n’a encore rien demandé.</p>`}</div></div>`;
@@ -349,14 +478,9 @@ async function act(action, data, msg) {
 document.addEventListener('click', (e) => {
   if (!S) return;
   const o = e.target.closest('[data-person]');
-  if (o) { enterRoom(o.dataset.person); return; }
-  const n = e.target.closest('[data-noel]');
-  if (n) {
-    if (S.revealed) { enterRoom(S.me); return; }
-    n.classList.remove('shake'); void n.offsetWidth; n.classList.add('shake');
-    toast('Cette porte s’ouvrira le 24 décembre à 18 h, quand les anges seront passés.');
-    return;
-  }
+  if (o) { if (Date.now() - swipeAt > 400) enterRoom(o.dataset.person); return; }
+  const dd = e.target.closest('[data-day]');
+  if (dd) { if (Date.now() - swipeAt > 400) openDay(+dd.dataset.day, dd); return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const id = b.dataset.id;
   const i = S.ideas.find((x) => x.id === id);
