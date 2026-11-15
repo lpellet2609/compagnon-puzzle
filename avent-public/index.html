@@ -14,6 +14,12 @@
 <meta property="og:url" content="https://temps-de-lavent.vercel.app/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0B1020">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Avent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B1020'/%3E%3Cpath d='M16 3l2 10 10 3-10 3-2 10-2-10-10-3 10-3z' fill='%23F2C35B'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Literata:opsz,wght@7..72,400;7..72,600&family=Figtree:wght@400;600;700&display=swap">
 <style>
@@ -93,6 +99,14 @@ footer a{color:inherit}
 .dc-nav{display:flex;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
 .dc-close{position:fixed;z-index:2;top:calc(12px + env(safe-area-inset-top,0px));right:max(12px, env(safe-area-inset-right, 0px));width:44px;height:44px;border-radius:50%;
   border:1px solid rgba(255,255,255,.25);background:rgba(11,16,32,.6);color:#fff;font-size:18px;cursor:pointer}
+.sheet{position:fixed;inset:0;z-index:65;background:rgba(5,8,18,.75);display:flex;align-items:flex-end;justify-content:center;animation:dcIn .25s ease-out;
+  padding-left:max(12px, env(safe-area-inset-left, 0px));padding-right:max(12px, env(safe-area-inset-right, 0px));padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.sheet-box{width:100%;max-width:480px;background:var(--night-2);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.sheet-box h2{margin:0;font-family:var(--font-display);font-weight:400;font-size:24px;line-height:1.15}
+.sheet-box .sub{text-align:left}
+.isteps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.isteps li{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.isteps .iico{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.08);color:#6FA8FF;font-size:13px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(16px + env(safe-area-inset-top,0px));z-index:70;background:#FBF3E1;color:#2A1A05;padding:8px 16px;border-radius:999px;
   font-weight:600;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
 .toast.on{opacity:1}
@@ -110,7 +124,10 @@ footer a{color:inherit}
     <img src="facade.jpg" alt="La nuit de Noël : l’étoile au-dessus de l’étable, Marie, Joseph et l’enfant, les mages, les bergers et leurs moutons" width="1000" height="1250">
   </div></div>
   <p class="reassure">Rien à installer, aucune inscription : reviens simplement sur cette page chaque jour.</p>
-  <div class="actions"><button class="btn" id="share" type="button">Partager le calendrier</button></div>
+  <div class="actions">
+    <button class="btn" id="share" type="button">Partager le calendrier</button>
+    <button class="btn" id="addHome" type="button" hidden>Ajouter à l’écran d’accueil</button>
+  </div>
   <footer>
     Illustrations des fenêtres : Jim Padgett, Sweet Publishing / FreeBibleImages (licence CC BY-SA).<br>
     Récits librement inspirés des évangiles de Luc et de Matthieu.
@@ -231,6 +248,37 @@ async function share() {
 }
 $('#scene').addEventListener('click', (e) => { const d = e.target.closest('[data-day]'); if (d) openDay(+d.dataset.day, d); });
 $('#share').addEventListener('click', share);
+
+// Ajout facultatif à l'écran d'accueil (rien à installer : c'est un raccourci vers cette page)
+let deferredPrompt = null;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; if (!isStandalone()) $('#addHome').hidden = false; });
+addEventListener('appinstalled', () => { deferredPrompt = null; $('#addHome').hidden = true; });
+if (!isStandalone() && isIOS()) $('#addHome').hidden = false;
+$('#addHome').addEventListener('click', async () => {
+  if (deferredPrompt) { deferredPrompt.prompt(); try { await deferredPrompt.userChoice; } catch {} deferredPrompt = null; return; }
+  showHomeHelp();
+});
+function showHomeHelp() {
+  const SHARE = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M6 11v9h12v-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const PLUS = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const el = document.createElement('div'); el.className = 'sheet'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `<div class="sheet-box">
+      <h2>Garder le calendrier à portée de main</h2>
+      <p class="sub">Un simple raccourci vers cette page, rien à installer.</p>
+      ${isIOS() ? `<ol class="isteps">
+        <li><span class="iico">${SHARE}</span><span>Appuie sur <b>Partager</b>, en bas de Safari</span></li>
+        <li><span class="iico">${PLUS}</span><span>Choisis <b>Sur l’écran d’accueil</b> (fais défiler la liste si besoin)</span></li>
+        <li><span class="iico"><b>OK</b></span><span>Appuie sur <b>Ajouter</b>, en haut à droite</span></li>
+      </ol><p class="sub">Tu ne vois pas « Partager » ? Ouvre d’abord cette page dans Safari.</p>`
+      : '<p class="sub">Dans le menu de ton navigateur (⋮), choisis <b>Ajouter à l’écran d’accueil</b>.</p>'}
+      <button class="btn gold" type="button" data-close>Compris</button>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', (e) => { if (e.target === el || e.target.closest('[data-close]')) el.remove(); });
+}
 render();
 // Passer minuit sans recharger : la fenêtre du nouveau jour apparaît
 let shownDay = today();
