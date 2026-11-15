@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <title>Le Betlehem des Anges</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 4,28 28,28' fill='%231E5A3C'/%3E%3Ccircle cx='16' cy='17' r='3' fill='%23D2A23A'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Literata:opsz,wght@7..72,400;7..72,600&family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -368,29 +368,27 @@ async function openDay(n, door) {
     api('openDay', { day: n }).catch(() => {});
   }
 }
-// Verset tiré d'une phrase plus longue : on le signale par des points de suspension
-function verseText(v) {
-  let t = v.trim();
-  if (/^[a-zà-ÿ]/.test(t)) t = '… ' + t;
-  if (/[,;:]$/.test(t)) t = t.slice(0, -1).trimEnd() + '…';
-  else if (!/[.!?…»]$/.test(t)) t += '…';
-  return t;
-}
+// Typographie française : espace insécable avant ? ! : ; » et après «
+const fr = (t) => esc(t).replace(/ ([?!:;»])/g, '\u202F$1').replace(/« /g, '«\u202F');
 function showDayCard(n, days) {
   const d = days && days.find((x) => x.day === n);
   const el = document.createElement('div'); el.className = 'daycard'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
   const unlocked = (k) => k >= 1 && k <= Math.min(24, curDay());
   el.innerHTML = d ? `
     <button class="btn dc-close" type="button" data-dc="close" aria-label="Fermer">✕</button>
-    <div class="dc-img"><img src="/${d.img}" alt="${esc(d.artwork)}, ${esc(d.artist)}"></div>
+    <div class="dc-img"><img src="/${d.img}" alt=""></div>
     <div class="dc-body">
       <p class="dc-day">${n} ${MOIS}</p>
-      <h2>${esc(d.title)}</h2>
-      <blockquote>« ${esc(verseText(d.verse))} »</blockquote>
-      <p class="dc-ref">${esc(d.ref.replace(':', ', '))}</p>
+      <h2>${fr(d.title)}</h2>
+      <p class="dc-story">${fr(d.story)}</p>
+      <div class="dc-toi">
+        <p class="dc-q"><b>Et toi ?</b>${fr(d.question)}</p>
+        <p class="dc-act"><b>Ma bonne action du jour</b>${fr(d.action)}</p>
+      </div>
       ${BONUS[n] ? `<p class="dc-bonus">${esc(BONUS[n])}</p>` : ''}
       ${n === 24 ? `<p class="dc-bonus">${S.revealed ? 'La porte des souvenirs est ouverte : retrouve toutes les photos de la famille.' : 'Ce soir à 18 h, la porte des souvenirs s’ouvrira sur les photos de la famille.'}</p>` : ''}
-      <p class="dc-credit">${esc(d.artist)}, <i>${esc(d.artwork)}</i>${d.year ? ', ' + esc(d.year) : ''}</p>
+      <p class="dc-ref">${esc(d.ref)}</p>
+      <p class="dc-credit">${esc(d.credit)}</p>
       <div class="dc-nav">
         <button class="btn" type="button" data-dc="prev" ${unlocked(n - 1) ? '' : 'disabled'}>‹ ${n - 1 >= 1 ? n - 1 : ''}</button>
         <button class="btn" type="button" data-dc="next" ${unlocked(n + 1) ? '' : 'disabled'}>${n + 1 <= 24 ? n + 1 : ''} ›</button>
