@@ -9,6 +9,13 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 4,28 28,28' fill='%231E5A3C'/%3E%3Ccircle cx='16' cy='17' r='3' fill='%23D2A23A'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Literata:opsz,wght@7..72,400;7..72,600&family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Betlehem">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0B1020">
 </head>
 <body>
 <div class="wrap" id="root"><p class="lead">Chargement du Betlehem…</p></div>
@@ -84,7 +91,7 @@ function showPin(h, send, onBack) {
     try {
       await send(p1, choose);
       history.replaceState(null, '', location.pathname);
-      await loadApp();
+      S = await api('state'); sel = null; afterLogin();
     } catch (x) { err.textContent = x.message; $('#pin1').value = ''; if ($('#pin2')) $('#pin2').value = ''; $('#pin1').focus(); }
   });
 }
@@ -100,6 +107,48 @@ async function showPicker(invite) {
     const h = info.people.find((x) => x.id === btn.dataset.pick);
     showPin(h, (pin, choose) => api(choose ? 'inviteSetPin' : 'inviteLogin', { invite, id: h.id, pin }), () => showPicker(invite));
   }));
+}
+// ---------- Installation sur l'écran d'accueil ----------
+let deferredPrompt = null, lastToken = '';
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
+addEventListener('appinstalled', () => { deferredPrompt = null; });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const installSeen = () => { try { return localStorage.getItem('sapinInstallSeen') === '1'; } catch { return false; } };
+function afterLogin() {
+  if (!isStandalone() && !installSeen()) showInstall(() => startApp());
+  else startApp();
+}
+function showInstall(done) {
+  // Sur iPhone, l'icône garde l'adresse affichée : on y remet le lien de groupe pour se reconnecter depuis l'icône
+  const invite = store.get();
+  const back = invite ? '/?g=' + encodeURIComponent(invite) : lastToken ? '/?t=' + encodeURIComponent(lastToken) : '/';
+  if (isIOS()) history.replaceState(null, '', back);
+  const finish = () => { history.replaceState(null, '', location.pathname); try { localStorage.setItem('sapinInstallSeen', '1'); } catch {} done(); };
+  const SHARE = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M6 11v9h12v-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const PLUS = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  screen(`<img src="/icon-192.png" alt="" width="72" height="72" class="appicon">
+    <h1>Le Betlehem des Anges</h1>
+    <h2>Installe-le sur ton écran d’accueil</h2>
+    <p class="lead">Tu le retrouveras d’un seul geste, comme une appli. C’est aussi ce qui permettra de recevoir le rappel du soir.</p>
+    ${deferredPrompt ? '<button class="btn primary" id="doInstall" type="button">Ajouter à l’écran d’accueil</button>'
+      : isIOS() ? `<ol class="isteps">
+          <li><span class="iico">${SHARE}</span><span>Appuie sur <b>Partager</b>, en bas de Safari</span></li>
+          <li><span class="iico">${PLUS}</span><span>Choisis <b>Sur l’écran d’accueil</b> (fais défiler la liste si besoin)</span></li>
+          <li><span class="iico"><b>OK</b></span><span>Appuie sur <b>Ajouter</b>, en haut à droite</span></li>
+        </ol>
+        <p class="small">Ouvre ensuite le Betlehem depuis la nouvelle icône étoilée : appuie sur ton prénom et tape ton code, une dernière fois.</p>
+        <p class="small">Tu ne vois pas « Partager » ? Ouvre d’abord ce lien dans Safari.</p>`
+      : '<p class="lead">Dans le menu de ton navigateur (⋮), choisis <b>Ajouter à l’écran d’accueil</b> ou <b>Installer l’application</b>.</p>'}
+    <button class="btn ghost" id="later" type="button">${isIOS() ? 'C’est fait, continuer' : 'Plus tard'}</button>`);
+  $('#later').addEventListener('click', finish);
+  const b = $('#doInstall');
+  if (b) b.addEventListener('click', async () => {
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch {}
+    deferredPrompt = null; finish();
+  });
 }
 function showNoAccess(title) {
   const invite = store.get();
@@ -119,21 +168,22 @@ async function boot() {
   if (invite) {
     store.set(invite);
     history.replaceState(null, '', location.pathname);
-    try { S = await api('state'); startApp(); } catch { showPicker(invite); }
+    try { S = await api('state'); afterLogin(); } catch { showPicker(invite); }
     return;
   }
   if (token) {
+    lastToken = token;
     let h;
     try { h = await api('hello', { token }); }
     catch (e) { showMessage('Lien non reconnu', e.message); return; }
     try {
       const st = await api('state');
-      if (st.me === h.id) { history.replaceState(null, '', location.pathname); S = st; startApp(); return; }
+      if (st.me === h.id) { history.replaceState(null, '', location.pathname); S = st; afterLogin(); return; }
     } catch {}
     showPin(h, (pin, choose) => api(choose ? 'setPin' : 'login', { token, pin }));
     return;
   }
-  try { S = await api('state'); startApp(); }
+  try { S = await api('state'); afterLogin(); }
   catch (e) {
     if (e.status === 401) showNoAccess('Bienvenue');
     else showMessage('Oups', e.message);
@@ -152,6 +202,7 @@ function startApp() {
         </div>
         <div class="controls">
           <p class="count" id="countdown"></p>
+          ${isStandalone() ? '' : '<button class="btn ghost" id="installBtn" type="button">Installer</button>'}
           <button class="btn ghost" id="logout" type="button">Ce n’est pas moi</button>
         </div>
       </header>
@@ -184,6 +235,7 @@ function startApp() {
     S = null; showNoAccess('À bientôt');
   });
   $('#back').addEventListener('click', leaveRoom);
+  if ($('#installBtn')) $('#installBtn').addEventListener('click', () => showInstall(() => startApp()));
   bindSpin($('#stage'));
   view = 'facade';
   mode = 'spin'; chosen = false; ang = 0;

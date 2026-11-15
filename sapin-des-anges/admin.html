@@ -40,7 +40,7 @@ try { key = new URLSearchParams(location.hash.slice(1)).get('k') || sessionStora
 try { if (key) sessionStorage.setItem('sapinKey', key); } catch {}
 let people = [], invite = null;
 const groupLink = () => location.origin + '/?g=' + invite;
-const groupMessage = () => `Bonjour la famille ! 🎄 Voici notre Betlehem des Anges pour les cadeaux de Noël : ${groupLink()}\n\n1. Appuie sur ton prénom.\n2. Choisis un code secret à 4 chiffres et garde-le pour toi.\n\nÉcris ta lettre aux anges, et glisse en secret des idées pour les autres. Le 24 au soir, la porte de la crèche s’ouvre !`;
+const groupMessage = () => `Bonjour la famille ! 🎄 Voici notre Betlehem des Anges pour les cadeaux de Noël : ${groupLink()}\n\n1. Appuie sur ton prénom.\n2. Choisis un code secret à 4 chiffres et garde-le pour toi.\n3. Installe-le sur ton écran d’accueil : l’appli te montre comment.\n\nÉcris ta lettre aux anges, et glisse en secret des idées pour les autres. Le 24 au soir, la porte de la crèche s’ouvre !`;
 function renderGroup() {
   $('#group').innerHTML = invite
     ? `<h3>Lien du groupe WhatsApp</h3>

@@ -241,3 +241,10 @@ html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
 .dc-toi p{margin:0;font-family:"Literata", Georgia, serif;font-size:16px;line-height:1.5;color:#F3EEE2}
 .dc-toi b{display:block;margin-bottom:2px;font-family:var(--font-body);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#F2C35B}
 .dc-ref{text-transform:none;letter-spacing:0;font-size:13px;color:#A9A7B8}
+
+/* Installation sur l'écran d'accueil */
+.appicon{width:72px;height:72px;border-radius:16px;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.isteps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:st}
+.isteps li{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.isteps .iico{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--surface);border:1px solid var(--line);color:#2F7BF6;font-size:13px}
+.isteps b{font-weight:700}
