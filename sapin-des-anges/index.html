@@ -342,6 +342,14 @@ async function openDay(n, door) {
     api('openDay', { day: n }).catch(() => {});
   }
 }
+// Verset tiré d'une phrase plus longue : on le signale par des points de suspension
+function verseText(v) {
+  let t = v.trim();
+  if (/^[a-zà-ÿ]/.test(t)) t = '… ' + t;
+  if (/[,;:]$/.test(t)) t = t.slice(0, -1).trimEnd() + '…';
+  else if (!/[.!?…»]$/.test(t)) t += '…';
+  return t;
+}
 function showDayCard(n, days) {
   const d = days && days.find((x) => x.day === n);
   const el = document.createElement('div'); el.className = 'daycard'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
@@ -352,7 +360,7 @@ function showDayCard(n, days) {
     <div class="dc-body">
       <p class="dc-day">${n} ${MOIS}</p>
       <h2>${esc(d.title)}</h2>
-      <blockquote>« ${esc(d.verse)} »</blockquote>
+      <blockquote>« ${esc(verseText(d.verse))} »</blockquote>
       <p class="dc-ref">${esc(d.ref.replace(':', ', '))}</p>
       ${BONUS[n] ? `<p class="dc-bonus">${esc(BONUS[n])}</p>` : ''}
       ${n === 24 ? `<p class="dc-bonus">${S.revealed ? 'La porte des souvenirs est ouverte : retrouve toutes les photos de la famille.' : 'Ce soir à 18 h, la porte des souvenirs s’ouvrira sur les photos de la famille.'}</p>` : ''}
