@@ -248,3 +248,10 @@ html.zooming body::after{opacity:1;transition:opacity .45s ease-in .4s}
 .isteps li{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
 .isteps .iico{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--surface);border:1px solid var(--line);color:#2F7BF6;font-size:13px}
 .isteps b{font-weight:700}
+
+/* Mention « version privée », partage du calendrier public, rappel du soir */
+.famrow{display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center}
+.privnote{margin:0;font-size:13px;color:var(--muted);max-width:52ch}
+.privnote b{color:var(--ink)}
+.famactions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#pushBtn.on{border-color:var(--ok);color:var(--ok)}

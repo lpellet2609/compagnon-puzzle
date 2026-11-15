@@ -233,6 +233,52 @@ async function checkInvite(code) {
   if (!real || !code || !crypto.timingSafeEqual(a, b)) fail(404, 'Ce lien de groupe n’est pas (ou plus) valable. Demande le nouveau lien à l’organisateur.');
 }
 
+// ---------- Rappel du soir (notifications) ----------
+let webpush = null;
+function push() {
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) fail(503, 'Les rappels ne sont pas encore configurés.');
+  if (!webpush) {
+    webpush = require('web-push');
+    webpush.setVapidDetails('https://sapin-des-anges.vercel.app', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+  }
+  return webpush;
+}
+const subKey = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex').slice(0, 24);
+// Envoie une notification à tous les appareils d'une personne ; retire les abonnements expirés.
+async function notifyPerson(pid, payload) {
+  const subs = toObj(await cmd('HGETALL', P + 'push:' + pid));
+  let sent = 0;
+  for (const [k, raw] of Object.entries(subs)) {
+    try { await push().sendNotification(JSON.parse(raw), JSON.stringify(payload), { TTL: 6 * 3600 }); sent++; }
+    catch (e) { if (e.statusCode === 404 || e.statusCode === 410) await cmd('HDEL', P + 'push:' + pid, k); else console.error('push', e.statusCode || e.message); }
+  }
+  return sent;
+}
+let DAYS_CACHE = null;
+function dayTitle(n) {
+  try { DAYS_CACHE = DAYS_CACHE || require('../avent/days.json'); const d = DAYS_CACHE.find((x) => x.day === n); return d ? d.title : ''; } catch { return ''; }
+}
+const reminderFor = (n) => ({ title: 'Toc toc toc !', body: `La fenêtre du ${n} décembre est prête${dayTitle(n) ? ' : ' + dayTitle(n) : '.'}`, url: `/?jour=${n}` });
+// Appelé par les tâches programmées : prévient, vers 19 h chez eux, ceux qui n'ont pas ouvert la fenêtre du jour.
+async function eveningReminders() {
+  const day = calendarDay();
+  if (day < 1 || day > 24) return { day, sent: 0, skipped: 'hors de l’Avent' };
+  const people = Object.values(toObj(await cmd('HGETALL', P + 'people'))).map((x) => JSON.parse(x));
+  let sent = 0; const detail = [];
+  for (const p of people) {
+    const [n, tz, opened] = await pipe([['HLEN', P + 'push:' + p.id], ['GET', P + 'tz:' + p.id], ['SISMEMBER', P + 'opened:' + p.id, day]]);
+    if (!Number(n)) continue;
+    let hour = 19;
+    try { hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz || 'Europe/Paris', hour: '2-digit', hourCycle: 'h23' }).format(new Date())); } catch {}
+    if (hour < 19 || hour > 20) { detail.push([p.name, 'pas 19 h chez lui', hour]); continue; }
+    if (Number(opened)) { detail.push([p.name, 'déjà ouverte']); continue; }
+    const first = await cmd('SET', P + 'pushsent:' + p.id + ':' + day, '1', 'NX', 'EX', 172800);
+    if (!first) { detail.push([p.name, 'déjà prévenu']); continue; }
+    const k = await notifyPerson(p.id, reminderFor(day)); sent += k; detail.push([p.name, 'envoyé', k]);
+  }
+  return { day, sent, detail };
+}
+
 // ---------- Routeur ----------
 async function route(req, res, b) {
   const a = b.action;
@@ -273,7 +319,8 @@ async function route(req, res, b) {
     if (a === 'adminList') {
       const d = await loadAll();
       const invite = await cmd('GET', P + 'invite');
-      return { invite, people: d.people.map((p) => ({ id: p.id, name: p.name, token: p.token, hasPin: !!p.pinHash })) };
+      const pc = await pipe(d.people.map((p) => ['HLEN', P + 'push:' + p.id]));
+      return { invite, people: d.people.map((p, k) => ({ id: p.id, name: p.name, token: p.token, hasPin: !!p.pinHash, push: Number(pc[k]) || 0 })) };
     }
     if (a === 'adminInvite') {
       const invite = rand(12);
@@ -287,6 +334,12 @@ async function route(req, res, b) {
     }
     const p = await getPerson(b.id);
     if (!p) fail(404, 'Personne introuvable.');
+    if (a === 'adminTestPush') {
+      const n = Math.max(1, Math.min(24, calendarDay() || 1));
+      const sent = await notifyPerson(p.id, { ...reminderFor(n), title: 'Toc toc toc ! (essai)' });
+      if (!sent) fail(409, `${p.name} n’a pas encore activé le rappel du soir sur un appareil.`);
+      return { ok: true, sent };
+    }
     if (a === 'adminRename') { p.name = cleanName(b.name); await savePerson(p); return { ok: true }; }
     if (a === 'adminReset') {
       await cmd('DEL', P + 'token:' + p.token);
@@ -311,7 +364,7 @@ async function route(req, res, b) {
           }
         }
       }
-      cmds.push(['HDEL', P + 'people', p.id], ['DEL', P + 'token:' + p.token], ['DEL', P + 'fail:' + p.id], ['DEL', P + 'opened:' + p.id]);
+      cmds.push(['HDEL', P + 'people', p.id], ['DEL', P + 'token:' + p.token], ['DEL', P + 'fail:' + p.id], ['DEL', P + 'opened:' + p.id], ['DEL', P + 'push:' + p.id], ['DEL', P + 'tz:' + p.id]);
       await pipe(cmds);
       await killSessions(p.id);
       return { ok: true };
@@ -327,6 +380,20 @@ async function route(req, res, b) {
   if (a === 'logout') {
     await pipe([['DEL', P + 'session:' + sid], ['SREM', P + 'sessions:' + mine, sid]]);
     setCookie(res, '', 0);
+    return { ok: true };
+  }
+  if (a === 'pushConfig') return { publicKey: process.env.VAPID_PUBLIC_KEY || null };
+  if (a === 'pushSubscribe') {
+    const sub = b.sub || {};
+    if (typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || sub.endpoint.length > 1000 || !sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') fail(400, 'Abonnement invalide.');
+    const clean = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh.slice(0, 200), auth: sub.keys.auth.slice(0, 100) } };
+    let tz = String(b.tz || '').slice(0, 64);
+    try { new Intl.DateTimeFormat('fr-FR', { timeZone: tz }); } catch { tz = 'Europe/Paris'; }
+    await pipe([['HSET', P + 'push:' + mine, subKey(clean.endpoint), JSON.stringify(clean)], ['SET', P + 'tz:' + mine, tz || 'Europe/Paris']]);
+    return { ok: true };
+  }
+  if (a === 'pushUnsubscribe') {
+    if (typeof b.endpoint === 'string') await cmd('HDEL', P + 'push:' + mine, subKey(b.endpoint));
     return { ok: true };
   }
   if (a === 'openDay') {
@@ -426,3 +493,4 @@ module.exports = async (req, res) => {
   }
 };
 module.exports.viewFor = viewFor;
+module.exports.eveningReminders = eveningReminders;

@@ -109,7 +109,7 @@ async function showPicker(invite) {
   }));
 }
 // ---------- Installation sur l'écran d'accueil ----------
-let deferredPrompt = null, lastToken = '';
+let deferredPrompt = null, lastToken = '', pendingDay = 0;
 addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
 addEventListener('appinstalled', () => { deferredPrompt = null; });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -159,6 +159,8 @@ function showNoAccess(title) {
 async function boot() {
   const q = new URLSearchParams(location.search);
   const token = q.get('t'), invite = q.get('g');
+  pendingDay = Math.round(Number(q.get('jour'))) || 0;
+  if (pendingDay && !token && !invite) history.replaceState(null, '', location.pathname);
   // Aperçu réservé à l'organisateur : toutes les fenêtres ouvrables, rien n'est enregistré
   const ap = q.get('apercu');
   if (ap) {
@@ -213,6 +215,13 @@ function startApp() {
           <div class="face tree" id="faceTree"></div>
         </div>
       </div></div>
+      <div class="famrow">
+        <p class="privnote"><b>Version privée de la famille.</b> Pour partager le calendrier de l’Avent autour de toi, utilise la version publique, sans les listes ni les prénoms.</p>
+        <div class="famactions">
+          <button class="btn" id="sharePublic" type="button">Partager le calendrier public</button>
+          <button class="btn" id="pushBtn" type="button" hidden>Rappel du soir</button>
+        </div>
+      </div>
       <div class="chips" id="chips" aria-label="Ouvrir l’espace d’une personne"></div>
       <section class="section" id="legend">
         <h3>Qui voit quoi</h3>
@@ -237,9 +246,70 @@ function startApp() {
   $('#back').addEventListener('click', leaveRoom);
   if ($('#installBtn')) $('#installBtn').addEventListener('click', () => showInstall(() => startApp()));
   bindSpin($('#stage'));
+  $('#sharePublic').addEventListener('click', sharePublic);
+  $('#pushBtn').addEventListener('click', togglePush);
+  updatePushBtn();
   view = 'facade';
   mode = 'spin'; chosen = false; ang = 0;
   render(); setAng(); startSpin();
+  // Arrivée par la notification du soir : on ouvre directement la fenêtre du jour
+  if (pendingDay) {
+    const n = pendingDay; pendingDay = 0;
+    side = 'cal'; mode = 'frozen'; chosen = true; ang = 0; setAng(); updateChrome();
+    const door = document.querySelector(`.door.day[data-day="${n}"]`);
+    if (door && n <= curDay()) setTimeout(() => openDay(n, door), 350);
+  }
+}
+const PUBLIC_URL = 'https://temps-de-lavent.vercel.app/';
+async function sharePublic() {
+  const data = { title: 'Le temps de l’Avent', text: 'Un calendrier de l’Avent à ouvrir chaque jour jusqu’à Noël.', url: PUBLIC_URL };
+  try { if (navigator.share) { await navigator.share(data); return; } } catch { return; }
+  try { await navigator.clipboard.writeText(PUBLIC_URL); toast('Lien du calendrier public copié.'); } catch { toast(PUBLIC_URL); }
+}
+// ---------- Rappel du soir ----------
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function b64ToU8(b64) {
+  const s = (b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(s); return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+async function currentSub() {
+  if (!pushSupported()) return null;
+  try { const reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch { return null; }
+}
+async function updatePushBtn() {
+  const b = $('#pushBtn'); if (!b) return;
+  // Sur iPhone, les rappels ne sont possibles que depuis l'icône de l'écran d'accueil
+  if (!pushSupported() && !(isIOS() && !isStandalone())) { b.hidden = true; return; }
+  b.hidden = false;
+  const sub = await currentSub();
+  b.textContent = sub ? 'Rappel du soir activé ✓' : 'Recevoir le rappel du soir';
+  b.classList.toggle('on', !!sub);
+}
+async function togglePush() {
+  if (isIOS() && !isStandalone()) {
+    toast('Sur iPhone, ajoute d’abord le Betlehem à ton écran d’accueil, puis active le rappel depuis l’icône.');
+    setTimeout(() => showInstall(() => startApp()), 1800);
+    return;
+  }
+  if (!pushSupported()) { toast('Ce navigateur ne permet pas les rappels.'); return; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('pushUnsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+      await sub.unsubscribe();
+      toast('Rappel du soir désactivé.');
+    } else {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('Autorise les notifications pour recevoir le rappel.'); return; }
+      const { publicKey } = await api('pushConfig');
+      if (!publicKey) { toast('Les rappels ne sont pas encore prêts. Réessaie plus tard.'); return; }
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(publicKey) });
+      await api('pushSubscribe', { sub: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      toast('C’est noté : toc toc toc chaque soir vers 19 h, si la fenêtre du jour n’est pas encore ouverte.');
+    }
+  } catch (e) { toast(e.message || 'Le rappel n’a pas pu être activé.'); }
+  updatePushBtn();
 }
 function visible(pid) { return S.ideas.filter((i) => i.forId === pid); }
 function countdown() {

@@ -82,9 +82,9 @@ async function load() {
       <thead><tr><th>Prénom</th><th>Accès</th><th>Lien</th><th></th></tr></thead>
       <tbody>${people.map((p) => `<tr>
         <td><strong>${esc(p.name)}</strong></td>
-        <td>${p.hasPin ? '<span class="tag ok">Code choisi</span>' : '<span class="tag">En attente</span>'}</td>
+        <td>${p.hasPin ? '<span class="tag ok">Code choisi</span>' : '<span class="tag">En attente</span>'}${p.push ? `<br><span class="small">Rappel du soir activé${p.push > 1 ? ` (${p.push} appareils)` : ''}</span>` : ''}</td>
         <td><div class="inline"><button class="btn" data-a="msg" data-id="${p.id}">Copier le message</button><button class="btn ghost" data-a="link" data-id="${p.id}">Copier le lien seul</button></div></td>
-        <td><div class="inline"><button class="btn ghost" data-a="rename" data-id="${p.id}">Renommer</button><button class="btn ghost" data-a="reset" data-id="${p.id}">Réinitialiser</button><button class="btn ghost" data-a="del" data-id="${p.id}">Supprimer</button></div></td>
+        <td><div class="inline">${p.push ? `<button class="btn ghost" data-a="testpush" data-id="${p.id}">Tester le rappel</button>` : ''}<button class="btn ghost" data-a="rename" data-id="${p.id}">Renommer</button><button class="btn ghost" data-a="reset" data-id="${p.id}">Réinitialiser</button><button class="btn ghost" data-a="del" data-id="${p.id}">Supprimer</button></div></td>
       </tr>`).join('')}</tbody></table></div>
       <p class="small">« Réinitialiser » crée un nouveau lien et efface le code : à utiliser si quelqu’un a oublié son code, ou si son lien a été ouvert par une autre personne. L’ancien lien ne marche plus.</p>`
     : '<p class="empty">Personne pour l’instant. Commence par t’ajouter ci-dessous.</p>'}`;
@@ -95,6 +95,7 @@ document.addEventListener('click', async (e) => {
   try {
     if (b.dataset.a === 'msg') return copy(messageOf(p));
     if (b.dataset.a === 'link') return copy(linkOf(p));
+    if (b.dataset.a === 'testpush') { await api('adminTestPush', { id: p.id }); toast('Rappel d’essai envoyé à ' + p.name + '.'); return; }
     if (b.dataset.a === 'rename') { const n = prompt('Nouveau prénom', p.name); if (n && n.trim()) { await api('adminRename', { id: p.id, name: n }); toast('Renommé.'); } }
     if (b.dataset.a === 'reset') { if (confirm(`Réinitialiser l’accès de ${p.name} ? Son lien actuel ne marchera plus et il faudra lui envoyer le nouveau.`)) { await api('adminReset', { id: p.id }); toast('Nouveau lien créé. Envoie-le à ' + p.name + '.'); } }
     if (b.dataset.a === 'del') { if (confirm(`Supprimer ${p.name} du Betlehem ? Ses vœux, les idées pour lui ou elle et ses participations seront effacés.`)) { await api('adminDelete', { id: p.id }); toast('Supprimé.'); } }
